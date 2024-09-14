@@ -1,0 +1,1016 @@
+#include "script/system/mkm_system.dnh-sys"
+#include "script/system/wish_event.dnh-sys"
+#include "script/lib/lib_std.dnh-lib"
+//#include "script/system/wish_audio.dnh-sys"
+
+//Wish system!
+
+int hudWidthJP = 31;
+int hudHeightJP = 29;
+int hudWidthNum = 25;
+int hudHeightNum = 30;
+int hudYJP = 0;
+int hudYNum = 32;
+string MD = GetModuleDirectory ~ "/script/";
+bool waitForSpellEnd = false;
+bool lastSpellCapped = false;
+bool isSpell = false;
+int lastSpellBonus = 0;
+const string path_hudText = MD_Path("img/system/hudtext.png");
+//test
+
+@Initialize {
+	//InitFrame();,TScore();,TGraze();,TPlayerLife();,TPlayerSpell();,TBossLife();,TBossTimer();,TCurrentFps();,TReplayFps();
+
+	InstallFont("script/font/NTMarleyBold.ttf");
+
+	STGFrame;
+	Hud_Elements_Ex;
+	Boss_Display;
+	EffectSys;
+
+	CreateCommonDataArea("System");
+	CreateCommonDataArea("Spell");
+
+	StartItemScript("script/system/wish_item.dnh-sys");
+	//SetReplaySaveSceneScriptPath("script/system/wish_replaySave.dnh-sys");
+	//SetEndSceneScriptPath("script/system/wish_endScene.dnh-sys");
+	//SetPauseScriptPath("script/system/wish_pause.dnh-sys");
+}
+
+//obligatory
+@MainLoop {
+	yield;
+}
+
+@Event {
+	alternative(GetEventType())
+	case(EV_START_BOSS_SPELL) {
+		//let path = "script/system/wish_magicCircle.dnh-sys"; //MD ~ 
+		//let id = LoadScript(path);
+		//StartScript(id);
+		BossSpellStartup();
+	}
+	case(EV_GAIN_SPELL) {
+		int objScene = GetEnemyBossSceneObjectID();
+		int score = ObjEnemyBossScene_GetInfo(objScene, INFO_SPELL_SCORE);
+		lastSpellBonus = score;
+		lastSpellCapped = true;
+		//TGainSpell(score);
+	}
+	case(EV_END_BOSS_STEP) {
+		waitForSpellEnd = false;
+		SpellCapText();
+	}
+}
+
+@Finalize {
+
+}
+
+task EffectSys {
+  let eff = LoadScript("script/system/wish_effect.dnh-sys");
+  StartScript(eff);
+  while(!IsCloseScript(eff)) { yield; }
+}
+
+//STGFrame: Woah it's the stg frame!
+function STGFrame {
+	string path_st = MD_Path("img/system/hud/");
+	string path = path_st ~ "s1.png";
+	int obj = ObjPrim_Create(OBJ_SPRITE_2D);
+	ObjPrim_SetTexture(obj, path);
+	Obj_SetRenderPriorityI(obj, 0);
+	ObjSprite2D_SetSourceRect(obj, 0, 0, 1280, 960); //1280
+	ObjSprite2D_SetDestRect(obj, 0, 0, 1280, 960); //960
+	//Default values are (32, 16, 416, 464, 20, 80).
+
+	/*let pathLines = MD_Path("img/system/hud_lines.png");
+	let objLines = ObjPrim_Create(OBJ_SPRITE_2D);
+	ObjPrim_SetTexture(objLines, pathLines);
+	Obj_SetRenderPriorityI(objLines, 0.1);
+	ObjSprite2D_SetSourceRect(objLines, 0, 0, 391, 476); //1280
+	ObjSprite2D_SetDestRect(objLines, 0, 0, 391, 476); //960
+	ObjRender_SetPosition(objLines, 862, 112, 0);*/
+
+	SetStgFrame(64, 32, 832, 928, 20, 80);
+
+	FrameText();
+	IconDisplay();
+	MultiplierBar();
+}
+
+//HUD text
+task FrameText() {
+
+	function PrepTextNumL(int obj, int x, int y) {
+		ObjText_SetFontSize(obj, 48);
+		PrepTextGeneral(obj, x, y);
+	}
+
+	function PrepTextNumS(int obj, int x, int y) {
+		ObjText_SetFontSize(obj, 32);
+		PrepTextGeneral(obj, x, y);
+	}
+
+	function PrepTextSmall(int obj, int x, int y) {
+		ObjText_SetFontSize(obj, 20);
+		PrepTextGeneral(obj, x, y);
+	}
+
+	function PrepTextGeneral(int obj, int x, int y) {
+		ObjText_SetFontBold(obj, true);
+		ObjText_SetFontType(obj, "NT Marley");
+		ObjText_SetFontColorTop(obj, 255, 255, 255);
+		ObjText_SetFontColorBottom(obj, 255, 255, 255);
+		//ObjText_SetFontBorderType(objText, BORDER_FULL);
+		//ObjText_SetFontBorderColor(objText,255, 255, 255);
+		//ObjText_SetFontBorderWidth(objText, 2);
+		ObjText_SetHorizontalAlignment(obj, ALIGNMENT_RIGHT);
+		//ObjText_SetMaxWidth(obj, GetScreenWidth() - 8);
+		Obj_SetRenderPriorityI(obj, 1);
+		ObjRender_SetPosition(obj, x, y, 0);
+	}
+
+	function DifficultyRect(int obj) {
+		int difficulty = GetAreaCommonData("Game", "Diff", 2);
+		ObjSprite2D_SetSourceRect(difficultyText, 0, difficulty*58, 246, (difficulty+1)*58);
+	}
+
+	function<string> TextCommas(int num) {
+		string ret = "";
+		int len = length(IntToString(num));
+		int[] arr = DigitToArray(num, len);
+		int numThousands = floor(len / 3);
+		int remainder = len % 3;
+
+		for(int i = 0; i < numThousands; i++) {
+			string piece = IntToString(arr[len - 1 - (i*3 + 2)]) ~ IntToString(arr[len - 1 - (i*3 + 1)]) ~ IntToString(arr[len - 1 - (i*3 + 0)]);
+			if ((i == numThousands - 1) && (remainder == 0)) {
+				ret = piece ~ ret;
+			}
+			else {
+				ret = "," ~ piece ~ ret;
+			}
+		}
+		for (int i = 0; i < remainder; i++) {
+			ret = IntToString(arr[len - (numThousands*3) - i - 1]) ~ ret;
+		}
+
+		return ret;
+	}
+
+	int difficultyText = ObjPrim_Create(OBJ_SPRITE_2D);
+	ObjPrim_SetTexture(difficultyText, "script/img/system/hud/difficulty.png");
+	Obj_SetRenderPriorityI(difficultyText, 1);
+	ObjSprite2D_SetSourceRect(difficultyText, 0, 0, 246, 58);
+	ObjSprite2D_SetDestRect(difficultyText, 0, 0, 246, 58);
+	ObjRender_SetPosition(difficultyText, 922, 34, 0);
+
+	int scoreNum = ObjText_Create();
+	int scoreText = ObjText_Create();
+	int highScoreNum = ObjText_Create();
+	int peiScore = ObjText_Create(); // shoutouts to ペイスコア
+
+	int livesText = ObjText_Create();
+	int nextExtendText = ObjText_Create();
+
+	int spellText = ObjText_Create();
+
+	int multiMain = ObjText_Create();
+	int multiSub = ObjText_Create();
+	int multiText = ObjText_Create();
+
+	int pivNum = ObjText_Create();
+	int pivText = ObjText_Create();
+
+	int grazeNum = ObjText_Create();
+	int grazeText = ObjText_Create();
+
+	int secretsNum = ObjText_Create();
+	int secretsText = ObjText_Create();
+	int encoreReady = ObjText_Create();
+
+	PrepTextNumL(scoreNum, 1242, 216);
+	PrepTextSmall(scoreText, 1242, 257);
+	PrepTextNumL(highScoreNum, 1242, 116);
+	PrepTextSmall(peiScore, 1242, 157);
+	PrepTextSmall(livesText, 1242, 349);
+	PrepTextSmall(nextExtendText, 1242, 369);
+	PrepTextSmall(spellText, 1242, 479);
+	PrepTextNumL(multiMain, 920, 515);
+	ObjText_SetFontSize(multiMain, 48);
+	PrepTextNumS(multiSub, 920, 529);
+	ObjText_SetHorizontalAlignment(multiSub, ALIGNMENT_LEFT);
+	PrepTextSmall(multiText, 871, 558);
+	ObjText_SetHorizontalAlignment(multiText, ALIGNMENT_LEFT);
+	PrepTextNumS(pivNum, 871, 598);
+	ObjText_SetHorizontalAlignment(pivNum, ALIGNMENT_LEFT);
+	PrepTextSmall(pivText, 871, 630);
+	ObjText_SetHorizontalAlignment(pivText, ALIGNMENT_LEFT);
+	PrepTextNumS(grazeNum, 886, 690);
+	ObjText_SetHorizontalAlignment(grazeNum, ALIGNMENT_LEFT);
+	PrepTextSmall(grazeText, 848, 722);
+	ObjText_SetHorizontalAlignment(grazeText, ALIGNMENT_LEFT);
+	PrepTextNumL(secretsNum, 1222, 529);
+	PrepTextSmall(secretsText, 1242, 572);
+	PrepTextSmall(encoreReady, 1242, 593);
+
+	ObjText_SetText(scoreText, "Score");
+	ObjText_SetText(peiScore, "High Score");
+	ObjText_SetText(livesText, "Lives");
+	ObjText_SetText(spellText, "Spellcard");
+	ObjText_SetText(multiText, "Multiplier");
+	ObjText_SetText(pivText, "PIV");
+	ObjText_SetText(grazeText, "Graze");
+	ObjText_SetText(secretsText, "Secrets");
+	ObjText_SetText(encoreReady, "Encore Ready!");
+
+	loop {
+		DifficultyRect(difficultyText);
+		ObjText_SetText(scoreNum, TextCommas(GetScore()));
+		ObjText_SetText(highScoreNum, "9,999,999,999,999");
+		ObjText_SetText(nextExtendText, "Extend: " ~ TextCommas(10000000));
+		float multiplier = GetAreaCommonData("System", "Multiplier", 1.00);
+		int m_main = floor(multiplier);
+		int m_sub = floor((multiplier - m_main) * 100);
+		ObjText_SetText(multiMain, StringFormat("%2d", "d", m_main));
+		ObjText_SetText(multiSub, StringFormat(".%02dx", "d", m_sub));
+		ObjText_SetText(pivNum, TextCommas(GetAreaCommonData("System", "PIV", 10000)));
+		ObjText_SetText(grazeNum, TextCommas(GetGraze()));
+		int secretsN = GetAreaCommonData("Game", "SecretsNum", 0);
+		int secretsMax = GetAreaCommonData("Game", "SecretsMax", 1);
+		ObjText_SetText(secretsNum, StringFormat("%2d%s%2d", "dsd", secretsN, " / ", secretsMax));
+		if (secretsN >= secretsMax) {
+			Obj_SetVisible(encoreReady, true);
+			ObjText_SetFontColorTop(encoreReady, 255, 255, 0);
+			ObjText_SetFontColorBottom(encoreReady, 255, 255, 0);
+			ObjText_SetFontColorTop(secretsNum, 255, 255, 0);
+			ObjText_SetFontColorBottom(secretsNum, 255, 255, 0);
+		}
+		else {
+			Obj_SetVisible(encoreReady, false);
+			ObjText_SetFontColorTop(secretsNum, 255, 255, 255);
+			ObjText_SetFontColorBottom(secretsNum, 255, 255, 255);
+		}		
+		yield;
+	}
+
+}
+
+//Resource texts
+task IconDisplay() {
+
+	const resourcesPath = "script/img/system/hud/resources.png";
+	const icoPath = "script/img/system/hud/hudico.png";
+	const logoPath = "script/img/system/hud/logo_smol.png";
+	int partListLives = InitLivesPartlist();
+	int partListBombs = InitBombsPartlist();
+
+	int iconBulletGraze = ObjPrim_Create(OBJ_SPRITE_2D);
+	int iconWonderSecrets = ObjPrim_Create(OBJ_SPRITE_2D);
+	int logoSpaceEmptynt = ObjPrim_Create(OBJ_SPRITE_2D);
+
+	ObjPrim_SetTexture(iconBulletGraze, icoPath);
+	ObjPrim_SetTexture(iconWonderSecrets, icoPath);
+	ObjPrim_SetTexture(logoSpaceEmptynt, logoPath);
+	Obj_SetRenderPriorityI(iconBulletGraze, 1);
+	Obj_SetRenderPriorityI(iconWonderSecrets, 1);
+	Obj_SetRenderPriorityI(logoSpaceEmptynt, 1);
+
+	ObjSprite2D_SetSourceRect(iconBulletGraze, 0, 0, 36, 36);
+	ObjSprite2D_SetSourceRect(iconWonderSecrets, 64, 0, 128, 64);
+	ObjSprite2D_SetDestRect(iconBulletGraze, 0, 0, 36, 36);
+	ObjSprite2D_SetDestRect(iconWonderSecrets, 0, 0, 64, 64);
+
+	ObjSprite2D_SetSourceRect(logoSpaceEmptynt, 0, 0, 450, 125);
+	ObjSprite2D_SetDestRect(logoSpaceEmptynt, 0, 0, 450, 125);
+
+	ObjRender_SetPosition(logoSpaceEmptynt, 832, 816, 0);
+	ObjRender_SetPosition(iconBulletGraze, 842, 690, 0);
+	ObjRender_SetPosition(iconWonderSecrets, 1222, 509, 0);
+
+	loop {
+		DrawLivesImg(min(GetPlayerLife(),5));
+		DrawBombsImg(min(GetPlayerSpell(),5));
+		yield;
+	}
+
+
+	function<int> InitLivesPartlist() {
+		int ret = ObjParticleList_Create(OBJ_PARTICLE_LIST_2D);
+		ObjPrim_SetTexture(ret, resourcesPath);
+		ObjRender_SetBlendType(ret, BLEND_ALPHA);
+		Obj_SetRenderPriorityI(ret, 1);
+		PrimRectB(ret, 1, 1, 81, 71, 80, 70, true);
+		return ret;
+	}
+
+	function<int> InitBombsPartlist() {
+		int ret = ObjParticleList_Create(OBJ_PARTICLE_LIST_2D);
+		ObjPrim_SetTexture(ret, resourcesPath);
+		ObjRender_SetBlendType(ret, BLEND_ALPHA);
+		Obj_SetRenderPriorityI(ret, 1);
+		PrimRectB(ret, 1, 110, 81, 181, 80, 70, true);
+		return ret;
+	}
+
+	function DrawLivesImg(int lives) {
+		const float baseX = 900;
+		const float baseY = 320;
+		const float scale = 80/80;
+		ascent(i in 0..lives) {
+			ObjParticleList_SetPosition(partListLives, baseX + i*80, baseY, 0);
+			ObjParticleList_SetScale(partListLives, scale);
+			ObjParticleList_AddInstance(partListLives);
+		}
+	}
+
+	function DrawBombsImg(int bombs) {
+		const float baseX = 900;
+		const float baseY = 330; //???? math makes no sense but w/e
+		const float scale = 80/80;
+		ascent(i in 0..bombs) {
+			ObjParticleList_SetPosition(partListBombs, baseX + i*80, baseY, 0);
+			ObjParticleList_SetScale(partListBombs, scale);
+			ObjParticleList_AddInstance(partListBombs);
+		}
+	}
+
+}
+
+task MultiplierBar() {
+
+	const string barPath = "script/img/system/hud/multbar.png";
+	const string hpTmPath = "script/img/system/hud/multbarFill.png";
+
+	int objBar = ObjPrim_Create(OBJ_SPRITE_2D);
+	int objHPtm = ObjPrim_Create(OBJ_SPRITE_2D);
+
+	ObjPrim_SetTexture(objBar, barPath);
+	ObjPrim_SetTexture(objHPtm, hpTmPath);
+	ObjSprite2D_SetSourceRect(objBar, 0, 0, 9, 193);
+	ObjSprite2D_SetDestRect(objBar, 0, 0, 9, 193);
+	ObjSprite2D_SetSourceRect(objHPtm, 0, 0, 9, 193);
+	ObjSprite2D_SetDestRect(objHPtm, 0, 0, 9, 193);
+	ObjRender_SetPosition(objBar, 849, 482, 0);
+	ObjRender_SetPosition(objHPtm, 849, 482+193, 0);
+	Obj_SetRenderPriorityI(objBar, 2);
+	Obj_SetRenderPriorityI(objHPtm, 2); 
+	ObjRender_SetScaleY(objHPtm, -1);
+
+	const int maxTimer = 600;
+	const int maxHeight = 193;
+
+	loop {
+		int currentTimer = GetAreaCommonData("System", "MultTimer", 0);
+		float rate = currentTimer / maxTimer;
+		ObjSprite2D_SetSourceRect(objHPtm, 0, 0, 9, rate*maxHeight);
+		ObjSprite2D_SetDestRect(objHPtm, 0, 0, 9, rate*maxHeight);
+		float colorRate = min(128, 256*rate) * 2;
+		ObjRender_SetColor(objHPtm, 255, colorRate, colorRate);
+		yield;
+	}
+
+}
+
+//Any extra HUD elements! (including FPS and Replay FPS)
+task Hud_Elements_Ex {
+	TReplayFps;
+	TCurrentFps;
+}
+
+//Boss HUD elements: particularly boss HP and timer
+task Boss_Display {
+	Boss_Life;
+	Boss_Timer;
+	Enemy_Marker;
+}
+
+task Enemy_Marker {
+	int objScene = ID_INVALID;
+	int enemyMarker = ObjPrim_Create(OBJ_SPRITE_2D);
+	ObjPrim_SetTexture(enemyMarker, "script/img/system/hud/enemyMarker.png");
+	ObjSprite2D_SetSourceRect(enemyMarker, 0, 0, 155, 14);
+	ObjSprite2D_SetDestCenter(enemyMarker);
+	Obj_SetRenderPriorityI(enemyMarker, 1);
+	ObjRender_SetPosition(enemyMarker, 64, 934, 0);
+	Obj_SetVisible(enemyMarker, false);
+
+	loop {
+		objScene = GetEnemyBossSceneObjectID();
+		if (objScene == ID_INVALID) {
+			Obj_SetVisible(enemyMarker, false);
+		}
+		else {
+			int[] bossObj = GetEnemyBossObjectID();
+			if (length(bossObj) > 0) {
+				ObjRender_SetX(enemyMarker, 64 + ObjMove_GetX(bossObj[0]));
+				Obj_SetVisible(enemyMarker, true);
+			}
+		}
+		yield;
+	}
+
+}
+
+
+task Boss_Life {
+	int objScene = ID_INVALID;
+	const string hbPath = "script/img/system/health.png";
+
+	const string bhpPath = "script/img/system/hud/bhp.png";
+	const string hp2Path = "script/img/system/hud/bhp2.png";
+
+	int objBar = ObjPrim_Create(OBJ_SPRITE_2D);
+	int objHP = ObjPrim_Create(OBJ_SPRITE_2D);
+
+	int objBar2 = ObjPrim_Create(OBJ_SPRITE_2D); //below playing field
+	int objHP2 = ObjPrim_Create(OBJ_SPRITE_2D); //below playing field
+
+	int[] objHPs = [];
+
+	// Prep cards
+
+	int cards = ObjPrim_Create(OBJ_SPRITE_LIST_2D);
+	ObjPrim_SetTexture(cards, hbPath);
+	ObjRender_SetY(cards, 20);
+	float cardsX = 44;
+	const float[] cardPosBlank = [720, 0];
+	const float[] cardPosSpell = [736, 0];
+	const float[] cardPosTime = [720, 16];
+	const float[] cardPosDelta = [736, 16];
+
+	// Prep healthbars
+
+	ObjPrim_SetTexture(objBar, hbPath);
+	ObjPrim_SetTexture(objHP, hbPath);
+	ObjSprite2D_SetSourceRect(objBar, 0, 32, 720, 64);
+	ObjSprite2D_SetDestRect(objBar, 0, 0, 720, 32);
+	ObjSprite2D_SetSourceRect(objHP, 0, 0, 720, 32);
+	ObjSprite2D_SetDestRect(objHP, 0, 0, 720, 32);
+
+	ObjRender_SetPosition(objBar, 24, 24, 0);
+	ObjRender_SetPosition(objHP, 24, 24, 0);
+
+	ObjPrim_SetTexture(objBar2, bhpPath);
+	ObjPrim_SetTexture(objHP2, hp2Path);
+	ObjSprite2D_SetSourceRect(objBar2, 0, 0, 762, 9);
+	ObjSprite2D_SetDestRect(objBar2, 0, 0, 762, 9);
+	ObjSprite2D_SetSourceRect(objHP2, 0, 0, 762, 9);
+	ObjSprite2D_SetDestRect(objHP2, 0, 0, 762, 9);
+	ObjRender_SetPosition(objBar2, 66, 940, 0);
+	ObjRender_SetPosition(objHP2, 66, 940, 0);
+	Obj_SetRenderPriorityI(objBar2, 2);
+	Obj_SetRenderPriorityI(objHP2, 2); 
+
+	// Perframe logic
+
+	const int baseWidth = 720;
+	const int baseWidthB = 762;
+	float lifeRateRender = 1;
+
+	loop {
+		objScene = GetEnemyBossSceneObjectID();
+		if (objScene == ID_INVALID) {
+			SetAllVisible(false);
+			lifeRateRender = 0;
+			objHPs = [];
+		}
+		else {
+			SetAllVisible(true);
+			if (GetAreaCommonData("System", "BossDisplayHide", false)) { SetAllVisible(false); }
+
+			//Lifebar cards for RoEW
+			lifeRateRender += 0.01;
+			cardsX = 44;
+			int countRemLifebars = ObjEnemyBossScene_GetInfo(objScene, INFO_REMAIN_STEP_COUNT);
+			int countRemAttacks = ObjEnemyBossScene_GetInfo(objScene, INFO_ACTIVE_STEP_LIFE_COUNT);
+
+			ObjSpriteList2D_ClearVertexCount(cards);
+			ascent(i in 0..countRemLifebars) {
+				ObjRender_SetX(cards, cardsX);
+				ObjSpriteList2D_SetSourceRect(cards, cardPosDelta[0], cardPosDelta[1], cardPosDelta[0] + 16, cardPosDelta[1] + 16);
+				ObjSpriteList2D_SetDestRect(cards, 0, 0, 16, 16);
+				ObjSpriteList2D_AddVertex(cards);
+				cardsX += 16;
+			}
+			ascent(i in 0..countRemAttacks) {
+				ObjRender_SetX(cards, cardsX);
+				float[] coords = cardPosBlank;
+				ObjSpriteList2D_SetSourceRect(cards, coords[0], coords[1], coords[0] + 16, coords[1] + 16);
+				ObjSpriteList2D_SetDestRect(cards, 0, 0, 16, 16);
+				ObjSpriteList2D_AddVertex(cards);
+				cardsX += 16;
+			}
+
+			//All lifebar processing here
+			float lifeTotalMax = ObjEnemyBossScene_GetInfo(objScene, INFO_ACTIVE_STEP_TOTAL_MAX_LIFE);
+			float lifeTotal = ObjEnemyBossScene_GetInfo(objScene, INFO_ACTIVE_STEP_TOTAL_LIFE);
+			float lifeRate = min(lifeTotal / lifeTotalMax, lifeRateRender);
+			float[] attackLifeRates = [0] ~ ObjEnemyBossScene_GetInfo(objScene, INFO_ACTIVE_STEP_LIFE_RATE_LIST);
+
+			ObjSprite2D_SetSourceRect(objHP, 18, 0, lifeRate*(baseWidth-18), 32);
+			ObjSprite2D_SetDestRect(objHP, 18, 0, lifeRate*(baseWidth-18), 32);
+
+			ObjSprite2D_SetSourceRect(objHP2, 0, 0, lifeRate*baseWidthB, 9);
+			ObjSprite2D_SetDestRect(objHP2, 0, 0, lifeRate*baseWidthB, 9);
+		}
+		yield;
+	}
+
+	//function<void> SetUpHealthbars(float[] rates) {
+//
+	//}
+	function<void> SetAllVisible(bool b) {
+		Obj_SetVisible(objBar, b);
+		Obj_SetVisible(objHP, b);
+		Obj_SetVisible(objHP2, b);
+		Obj_SetVisible(cards, b);
+	}
+}
+
+task Boss_Timer {
+	int objScene = ID_INVALID;
+	int textSeconds = ObjText_Create();
+	ObjText_SetFontSize(textSeconds, 20);
+	ObjText_SetFontBold(textSeconds, true);
+	ObjText_SetFontColorTop(textSeconds, 255, 255, 255);
+	ObjText_SetFontColorBottom(textSeconds, 255, 255, 255);
+	ObjText_SetFontBorderType(textSeconds, BORDER_FULL);
+	ObjText_SetFontBorderColor(textSeconds,0, 0, 0);
+	ObjText_SetFontBorderWidth(textSeconds, 2);
+	ObjText_SetHorizontalAlignment(textSeconds, ALIGNMENT_RIGHT);
+
+	int textMs = ObjText_Create();
+	ObjText_SetFontSize(textMs, 16);
+	ObjText_SetFontBold(textMs, true);
+	ObjText_SetFontColorTop(textMs, 255, 255, 255);
+	ObjText_SetFontColorBottom(textMs, 255, 255, 255);
+	ObjText_SetFontBorderType(textMs, BORDER_FULL);
+	ObjText_SetFontBorderColor(textMs,0, 0, 0);
+	ObjText_SetFontBorderWidth(textMs, 2);
+	ObjText_SetHorizontalAlignment(textMs, ALIGNMENT_LEFT);
+
+	float tx = 676;
+	float ty = 8;
+
+	loop {
+		objScene = GetEnemyBossSceneObjectID();
+		if (objScene == ID_INVALID) {
+			SetAllVisible(false);
+		}
+		else {
+			int timerf = ObjEnemyBossScene_GetInfo(objScene, INFO_TIMERF);
+			int seconds = timerf / 60;
+			int msec = timerf % 60;
+			//float timeReal = timerf / 60;
+			if (timerf == -1) {
+				seconds = 99;
+				msec = 99;
+			}
+			ObjText_SetText(textSeconds, ToString(seconds) ~ ".");
+			ObjText_SetText(textMs, StringFormat("%02d", "d",100 * msec / 60));
+			ObjRender_SetPosition(textSeconds, tx, ty, 0);
+			ObjRender_SetPosition(textMs, tx - 4, ty + 4, 0);
+
+			SetAllVisible(true);
+			if (GetAreaCommonData("System", "BossDisplayHide", false)) { SetAllVisible(false); }
+		}
+		yield;
+	}
+
+	function<void> SetAllVisible(bool b) {
+		Obj_SetVisible(textSeconds, b);
+		Obj_SetVisible(textMs, b);
+	}
+}
+
+task BossSpellStartup() {
+	int bossID = GetEnemyBossObjectID()[0];
+	int bossNum = Obj_GetValueI(bossID, 50, 0); //50 is the magic number in lib-stg for boss number...
+	isSpell = true;
+	string[] cutinPaths = ["script/other/img/char/philia/cutin.png","script/img/cutin/placeholder.png"];
+
+	CutinEffect();
+	SpellCardText();
+	wait(10);
+	SpellCardBackground(bossNum);
+
+	//split into multiple parts for clarity
+
+	//CutinEffect
+	task CutinEffect() {
+		int SpellCardAttack = ObjParticleList_Create(OBJ_PARTICLE_LIST_2D);
+		const string scaPath = "script/img/system/spellcardattack.png";
+		ObjPrim_SetTexture(SpellCardAttack, scaPath);
+		PrimRect(SpellCardAttack, 0, 0, 224, 34, 224, 34, true);
+
+		const float modifier = 60;
+		const float xbase = 250;
+		const float ybase = 50;
+		const float xsp = xbase / modifier;
+		const float ysp = ybase / modifier;
+		float[][] effectCoords = [];
+		float alpha = 255;
+
+		for(int j = -10; j < 11; j++) {
+			for(int i = 0; i < 9; i++) {
+				float[] coord = [GetCenterX() + (j * xbase), GetCenterY() - 150 + (i * ybase) + (j * -1* ybase), i];
+				effectCoords ~= [coord];
+			} 
+		}
+
+		wait(5);
+		BasicPortrait(cutinPaths[bossNum]);
+		//SpellStartSFX();
+		loop(120) {
+			CreateParticles();
+			MoveParticleCoords();
+			yield;
+		}
+		loop(30) {
+			alpha -= 255 / 30;
+			CreateParticles();
+			MoveParticleCoords();
+			yield;
+		}
+
+		function CreateParticles() {
+			for(int i = 0; i < length(effectCoords); i++) {
+				float[] coord = effectCoords[i];
+				ObjParticleList_SetPosition(SpellCardAttack, coord[0], coord[1], 0);
+				//ObjParticleList_SetScale(SpellCardAttack, 1);
+				ObjParticleList_SetAngleZ(SpellCardAttack, 350);
+				ObjParticleList_SetAlpha(SpellCardAttack, alpha);
+				//ObjParticleList_SetColor(SpellCardAttack, );
+				ObjParticleList_AddInstance(SpellCardAttack);
+			}
+		}
+
+		function MoveParticleCoords() {
+			for(int i = 0; i < length(effectCoords); i++) {
+				float[] coord = effectCoords[i];
+				int switch = (coord[2] % 2 == 0) ? 1 : -1;
+				coord[0] += xsp * switch;
+				coord[1] += ysp * switch * -1;
+				effectCoords[i] = coord;
+			}
+		}
+
+	}
+
+	//BasicPortrait()
+	task BasicPortrait(string path) {
+		int cutin = ObjPrim_Create(OBJ_SPRITE_2D);
+		float scale = 1; //0.3
+		ObjPrim_SetTexture(cutin, path);
+		ObjSprite2D_SetSourceRect(cutin, 0, 0, 758, 1000); //2650,2300
+		ObjSprite2D_SetDestCenter(cutin);
+		ObjRender_SetScaleXYZ(cutin, scale, scale, scale);
+		Obj_SetRenderPriorityI(cutin, 79);
+
+		float rx = -500;
+		float ry = GetCenterY() - 300;
+		loop(10) {
+			rx += 60;
+			ry += 20;
+			ObjRender_SetPosition(cutin, rx, ry, 0);
+			yield;
+		}
+		loop(100) {
+			rx += 5;
+			ry += 1;
+			ObjRender_SetPosition(cutin, rx, ry, 0);
+			yield;
+		}
+		loop(10) {
+			rx += 60;
+			ry += 20;
+			ObjRender_SetPosition(cutin, rx, ry, 0);
+			yield;
+		}
+
+		Obj_Delete(cutin);
+	}
+
+	task SpellCardText() {
+		string text = GetAreaCommonData("Spell", "Name", "placeholder");
+		string font = GetAreaCommonData("System", "ScTextFont", "MS UI Gothic");
+
+		int sctext = ObjText_Create();
+		ObjText_SetFontType(sctext, font);
+		ObjText_SetText(sctext, text);
+		ObjText_SetFontSize(sctext, 20);
+		ObjText_SetFontBold(sctext, true);
+		ObjText_SetFontColorTop(sctext, 255, 255, 255);
+		ObjText_SetFontColorBottom(sctext, 255, 255, 255);
+		ObjText_SetFontBorderType(sctext, BORDER_FULL);
+		ObjText_SetFontBorderColor(sctext, 0, 0, 0);
+		ObjText_SetFontBorderWidth(sctext, 2);
+		ObjText_SetMaxWidth(sctext, 480);
+		ObjText_SetVerticalAlignment(sctext, ALIGNMENT_BOTTOM);
+		ObjText_SetHorizontalAlignment(sctext, ALIGNMENT_CENTER);
+		Obj_SetRenderPriorityI(sctext, 78);
+
+		int sctext_bg = ObjPrim_Create(OBJ_SPRITE_2D);
+		ObjPrim_SetTexture(sctext_bg, "script/img/system/sctext.png");
+		ObjSprite2D_SetSourceRect(sctext_bg, 0, 0, 388, 36); //2650,2300
+		ObjSprite2D_SetDestCenter(sctext_bg);
+		//ObjRender_SetScaleXYZ(sc_text, scale, scale, scale);
+		Obj_SetRenderPriorityI(sctext_bg, 77);
+
+		ObjRender_SetPosition(sctext_bg, 384, 80, 0);
+		ObjRender_SetPosition(sctext, 384-240, 90, 0);
+
+		float xsc = 0;
+		int time = 0;
+
+		while (xsc < 1) {
+			time++;
+			xsc = time*time / 100;
+			ObjRender_SetScaleX(sctext, xsc);
+			ObjRender_SetScaleX(sctext_bg, xsc);
+			yield;
+		}
+		xsc = 1;
+		ObjRender_SetScaleX(sctext, xsc);
+		ObjRender_SetScaleX(sctext_bg, xsc);
+
+		while(isSpell) { yield; }
+
+		while (xsc > 0) {
+			xsc = time*time / 100;
+			ObjRender_SetScaleX(sctext, xsc);
+			ObjRender_SetScaleX(sctext_bg, xsc);
+			yield;
+			time--;
+		}
+		Obj_Delete(sctext);
+		Obj_Delete(sctext_bg);
+	}
+ 
+ 	//SpellStartSFX()
+ 	/*
+	function SpellStartSFX() {
+		//done this way to sidestep PlaySFX - if PlaySFX somehow becomes outdated, replace this please!!
+		NotifyEvent(GetAreaCommonData("Reserved","AudioScriptID",ID_INVALID), EV_PLAY_SFX, "spelldeclare", 1, 1);
+	}	*/
+
+}
+
+task SpellCapText() {
+	yield;
+	if (!isSpell) { return; }
+	isSpell = false;
+	if (lastSpellCapped) {
+		SpellCardCapture();
+	}
+	else {
+		BonusFailed();
+	}
+	lastSpellCapped = false;
+
+	task SpellCardCapture() {
+		const int BonusScore = floor(lastSpellBonus / 10) * 10;
+		AddScore(BonusScore);
+		const int numDigits = length(IntToString(BonusScore));
+		int[] ScoreArray = DigitToArray(BonusScore, numDigits);
+		int scoreTextList = ObjPrim_Create(OBJ_SPRITE_LIST_2D);
+		ObjPrim_SetTexture(scoreTextList, path_hudText);
+		Obj_SetRenderPriorityI(scoreTextList, 91);
+		ObjRender_SetY(scoreTextList, 500);
+
+		int getSCBonus = ObjText_Create();
+		ObjText_SetText(getSCBonus, "Get Spell Card Bonus!!");
+		ObjText_SetFontSize(getSCBonus, 32);
+		ObjText_SetFontBold(getSCBonus, true);
+		ObjText_SetFontColorTop(getSCBonus, 255, 255, 255);
+		ObjText_SetFontColorBottom(getSCBonus, 0, 255, 255);
+		ObjText_SetFontBorderType(getSCBonus, BORDER_FULL);
+		ObjText_SetFontBorderColor(getSCBonus, 0, 0, 0);
+		ObjText_SetFontBorderWidth(getSCBonus, 1);
+		ObjText_SetAutoTransCenter(getSCBonus, true);
+		ObjRender_SetPosition(getSCBonus, GetCenterX() - ObjText_GetTotalWidth(getSCBonus)/2, 160, 0);
+
+		float alpha = 0;
+		const int fadeTime = 30;
+		const float alphaIncr = 255 / fadeTime;
+
+		SpellCapSFX();
+		function SpellCapSFX() {
+			//done this way to sidestep PlaySFX - if PlaySFX somehow becomes outdated, replace this please!!
+			NotifyEvent(GetAreaCommonData("Reserved","AudioScriptID",ID_INVALID), EV_PLAY_SFX, "se_cardget", 1, 1);
+		}	
+		
+		loop(fadeTime) {
+			ObjRender_SetAlpha(getSCBonus, alpha);
+			ObjRender_SetAlpha(scoreTextList, alpha);
+			alpha += alphaIncr;
+			yield;
+		}
+		ScorePopIn(scoreTextList, ScoreArray, 200+GetStgFrameTop());
+		loop(90) {
+			yield;
+		}
+		loop(fadeTime) {
+			ObjRender_SetAlpha(getSCBonus, alpha);
+			ObjRender_SetAlpha(scoreTextList, alpha);
+			alpha -= alphaIncr;
+			yield;
+		}
+
+		Obj_Delete(getSCBonus);
+		Obj_Delete(scoreTextList);
+	}
+
+	// i fucking hate sprite lists
+	task ScorePopIn(int scoreTextList, int[] indices, float y_base) {
+		int count = 1;
+		int timer = 0;
+		const int timerRate = 3;
+		const float pxRate = 5;
+		bool countMaxed = false;
+		float x_base = GetStgFrameLeft() + GetCenterX() - (hudWidthNum*length(indices) / 2);
+		float true_ybase = y_base / 2 + 10;
+
+		while(!Obj_IsDeleted(scoreTextList)) {
+			timer++;
+			ObjSpriteList2D_ClearVertexCount(scoreTextList);
+			for(let i = 0; i < count; i++) { //
+				ObjRender_SetX(scoreTextList,x_base + i*23);
+				if ((i == count-1) && (!countMaxed)) {
+					ObjRender_SetY(scoreTextList, true_ybase - (timerRate*pxRate) + (timer%timerRate)*pxRate);
+				}
+				int ind = indices[i]; //count-i-1
+				ObjSpriteList2D_SetSourceRect(scoreTextList, ind * 32, 32, (ind * 32) + hudWidthNum, 32+hudHeightNum); //36, 32, hudWidth
+				ObjSpriteList2D_SetDestCenter(scoreTextList);
+				ObjSpriteList2D_AddVertex(scoreTextList);
+			}
+			ObjSpriteList2D_CloseVertex(scoreTextList);
+			ObjRender_SetPosition(scoreTextList, 0, true_ybase, 0); //?????????????? DANMAKUFU WHY DOES THIS WORK
+
+			if ((timer % timerRate == 0) && (!countMaxed)) {
+				count++;
+				if (count == length(indices)) {
+					countMaxed = true;
+				}
+			}
+
+			yield;
+		}
+		
+	}
+
+	task BonusFailed() {
+
+		int getSCBonus = ObjText_Create();
+		ObjText_SetText(getSCBonus, "Failed Spell Bonus...");
+		ObjText_SetFontSize(getSCBonus, 32);
+		ObjText_SetFontBold(getSCBonus, true);
+		ObjText_SetFontColorTop(getSCBonus, 255, 255, 255);
+		ObjText_SetFontColorBottom(getSCBonus, 127, 127, 127);
+		ObjText_SetFontBorderType(getSCBonus, BORDER_FULL);
+		ObjText_SetFontBorderColor(getSCBonus, 0, 0, 0);
+		ObjText_SetFontBorderWidth(getSCBonus, 1);
+		ObjText_SetAutoTransCenter(getSCBonus, true);
+		ObjRender_SetPosition(getSCBonus, GetCenterX() - ObjText_GetTotalWidth(getSCBonus)/2, 160, 0);
+
+		float alpha = 0;
+		const int fadeTime = 30;
+		const float alphaIncr = 255 / fadeTime;
+		float angle = 0;
+		const float angleIncr = 0.5;
+		float ry = 160;
+		const float yincr = 2;
+
+		loop(fadeTime) {
+			ObjRender_SetAlpha(getSCBonus, alpha);
+			alpha += alphaIncr;
+			yield;
+		}
+		loop(90) {
+			yield;
+		}
+		loop(fadeTime) {
+			ObjRender_SetAlpha(getSCBonus, alpha);
+			ObjRender_SetAngleZ(getSCBonus, angle);
+			ObjRender_SetY(getSCBonus, ry);
+			alpha -= alphaIncr;
+			angle += angleIncr;
+			ry += yincr;
+			yield;
+		}
+
+		Obj_Delete(getSCBonus);
+	}
+
+}
+
+task SpellCardBackground(int numBoss) {
+	int bg = ID_INVALID;
+	int[] bg_objs = [];
+	const int rPrio = 25; //please set render priority relative to this...
+	int timer = 0;
+	int sx = GetCenterX(); //starting position
+	int sy = GetCenterY();
+	float rx = 0; //relative x/y
+	float ry = 0;
+	int alpha = 0;
+
+	alternative(numBoss)
+	others {
+		bg = ObjPrim_Create(OBJ_SPRITE_2D);
+		Obj_SetRenderPriorityI(bg, rPrio);
+		ObjPrim_SetTexture(bg, "script/img/bg/spell/placeholder2.png");
+		ObjSprite2D_SetSourceRect(bg, 0, 0, 1280, 1280);
+		ObjSprite2D_SetDestCenter(bg);
+		ObjRender_SetPosition(bg, sx, sy, 0);
+	}
+
+	waitForSpellEnd = true;
+	while(waitForSpellEnd) {
+		alpha = (alpha < 255) ? alpha + 25 : 255;
+		timer++;
+		logicPerFrame();
+		yield;
+	}
+	loop(11) {
+		alpha -= 25;
+		timer++;
+		logicPerFrame();
+		yield;
+	}
+
+	alternative(numBoss)
+	others {
+		Obj_Delete(bg);
+	}
+
+	function logicPerFrame() {
+		alternative(numBoss)
+		others {
+			rx += 2;
+			ry += 2;
+			if (rx >= 128) {
+				rx -= 128;
+			}
+			if (ry >= 128) {
+				ry -= 128;
+			}
+			ObjRender_SetAlpha(bg, alpha * 0.3);
+			ObjRender_SetPosition(bg, sx + rx, sy + ry, 0);
+		}
+	}
+}
+
+function PrimRect(int list, int x1, int y1, int x2, int y2, int w, int h, bool centered) {
+	//made for generating a primitive rectangle from a single image
+	int ox = 0; //origin
+	int oy = 0;
+	if (centered) {
+		ox = -1 * w / 2;
+		oy = -1 * h / 2;
+	}
+
+	ObjPrim_SetPrimitiveType(list, PRIMITIVE_TRIANGLELIST);
+	ObjPrim_SetVertexCount(list, 4);
+	ObjPrim_SetVertexPosition(list, 0, ox + x1, oy + y1, 0);
+	ObjPrim_SetVertexUVT(list, 0, 0, 0);
+	ObjPrim_SetVertexPosition(list, 1, ox + x2, oy + y1, 0);
+	ObjPrim_SetVertexUVT(list, 1, w, 0);
+	ObjPrim_SetVertexPosition(list, 2, ox + x1, oy + y2, 0);
+	ObjPrim_SetVertexUVT(list, 2, 0, h);
+	ObjPrim_SetVertexPosition(list, 3, ox + x2, oy + y2, 0);
+	ObjPrim_SetVertexUVT(list, 3, w, h);
+	ObjPrim_SetVertexIndex(list, [0, 1, 2, 1, 2, 3]);
+}
+
+function GetCenterX(){
+	return (GetStgFrameWidth() / 2);
+}
+function GetCenterY(){
+    return (GetStgFrameHeight() / 2);
+}
+
+function PrimRectB(int list, int x1, int y1, int x2, int y2, int w, int h, bool centered) {
+	//made for generating a primitive rectangle from a single image
+	int ox = 0; //origin
+	int oy = 0;
+	if (centered) {
+		ox = -1 * w / 2;
+		oy = -1 * h / 2;
+	}
+
+	ObjPrim_SetPrimitiveType(list, PRIMITIVE_TRIANGLELIST);
+	ObjPrim_SetVertexCount(list, 4);
+	ObjPrim_SetVertexPosition(list, 0, ox + x1, oy + y1, 0);
+	ObjPrim_SetVertexUVT(list, 0, x1, y1);
+	ObjPrim_SetVertexPosition(list, 1, ox + x2, oy + y1, 0);
+	ObjPrim_SetVertexUVT(list, 1, x2, y1);
+	ObjPrim_SetVertexPosition(list, 2, ox + x1, oy + y2, 0);
+	ObjPrim_SetVertexUVT(list, 2, x1, y2);
+	ObjPrim_SetVertexPosition(list, 3, ox + x2, oy + y2, 0);
+	ObjPrim_SetVertexUVT(list, 3, x2, y2);
+	ObjPrim_SetVertexIndex(list, [0, 1, 2, 1, 2, 3]);
+}

@@ -1,0 +1,728 @@
+#include "script/system/wish_event.dnh-sys"
+#include "script/lib/lib_std.dnh-lib"
+
+
+/********************************
+CONSTANTS
+********************************/
+const int EXPRESSION_NORMAL = 0;
+const int EXPRESSION_FUNNI = 1; //the funny
+const int EXPRESSION_SMUG = 2;
+const int EXPRESSION_NERVOUS = 3;
+const int EXPRESSION_CONFUSED = 4;
+const int EXPRESSION_SURPRISE = 5;
+const int EXPRESSION_ANGER = 6;
+const int EXPRESSION_CURIOUS = 7;
+const int EXPRESSION_DISTRESS = 8;
+const int EXPRESSION_HMM = 9;
+const int EXPRESSION_DEFEAT = 10;
+const int EXPRESSION_PROUD = 11;
+const int EXPRESSION_SUPERSMUG = 12;
+
+const int CHAR_REIMU = 0;
+//const int CHAR_GENJI = 1;
+const int CHAR_RIKA = 2;
+const int CHAR_MEIRA = 3;
+const int CHAR_MARISA = 4;
+//const int CHAR_MIMA = 5;
+//const int CHAR_MIMA2 = 6;
+//const int CHAR_MIMA3 = 7;
+//const int CHAR_RIKA2 = 8;
+//const int CHAR_VIVIT = 9;
+const int CHAR_MISSINGNO = 10;
+
+const string[] CHAR_PATHTABLE = ["tricky/tricky_","","philia/philia_","","","","","","","", "placeholder/placeholder"];
+const string IMAGE_ENDER = ".png";
+const string IMAGE_PATH_START = MD_Path("other/img/char/");  //custom scripts only
+//const string IMAGE_PATH_START = MD_Path("img/char/");
+
+const int SIDE_PLAYER = 0;
+const int SIDE_BOSS = 1;
+const int SIDE_NOONE = -1;
+const int SIDE_GENJI = 2;
+
+const int[][] CHAR_TEXTBOX_COORDS = [ [435,373], [100,200], [780,500], [100,200], [100,200], [100,200], [100,200], [100,200], [100,200], [100,200], [100,200] ];
+const float[] CHAR_SCALE = [1.5, 0.5, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1.0];
+const int[][] CHAR_SOURCE_RECTS = [ [1024, 1024], [2650, 2300], [1024, 1024], [2650, 2300], [2650, 2300], [2650, 2300], [2650, 2300], [2650, 2300], [2650, 2300], [2650, 2300], [2650, 2300]];
+//const int[][] CHAR_TEXTBOX_COORDS = [ [100,200], [100,200], [100,200], [100,200], [100,200], [100,200], [100,200], [100,200], [100,200], [100,200], [100,200] ];
+//const float[] CHAR_SCALE = [1.0, 0.5, 0.45, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1.0];
+//const int[][] CHAR_SOURCE_RECTS = [ [832, 911], [2650, 2300], [2650, 2300], [2650, 2300], [2650, 2300], [2650, 2300], [2650, 2300], [2650, 2300], [2650, 2300], [2650, 2300], [2650, 2300]];
+// slowly replace all of these with 1.0 as I fix the scaling!!
+//const float[] CHAR_SCALE = [0.4, 0.5, 0.45, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1.0];
+
+const int INDEX_CHAR = 0;
+const int INDEX_EXPR = 1;
+const int INDEX_SIDE = 2;
+
+const int BUBBLE_NORMAL = 0;
+const int BUBBLE_THOUGHT = 1;
+
+//https://exphp.github.io/thpages/#/msg/ins
+const int FUNC_START = 0;
+const int FUNC_END = 0;
+const int FUNC_PLAYERSHOW = 1; //argument: player id
+const int FUNC_BOSSSHOW = 2; //argument: boss id
+const int FUNC_OTHERSHOW = 3; //originally TEXTBOXSHOW, reworking for GENJI, argument is side
+const int FUNC_PLAYERHIDE = 4;
+const int FUNC_BOSSHIDE = 5;
+const int FUNC_OTHERHIDE = 6; //originally TEXTBOXHIDE, reworking for GENJI, argument is side
+const int FUNC_SPEAKER = 7; //argument: side
+const int FUNC_SKIPPABLE = 10; //argument: boolean, ff-able
+const int FUNC_TEXTPAUSE = 11; //argument, int: waits for player to press shoot until a frames pass
+const int FUNC_BOSSFLY = 12; //resume ECL scripts normally (eclResume), boss fly in?
+const int FUNC_PLAYEREXPR = 13; //argument: expression id
+const int FUNC_BOSSEXPR = 14; //argument: expression id
+const int FUNC_TEXTBOX = 17; //argument: text for box!
+const int FUNC_TEXTCLEAR = 18; //normally used for furigana nowadays?  we can use it to clear text?
+const int FUNC_MUSICBOSS = 19; //triggers BGM?  likely unnecessary? (correction: no)  argument: BGM
+const int FUNC_INTRO = 20; //boss intro function!!  flesh out for robin/ULiL/DR style later...
+const int FUNC_STAGEEND = 21; //triggers stage clear procedure and ends dialogue event?
+const int FUNC_MUSICEND = 22; //fades out current BGM
+const int FUNC_PLAYERSHAKE = 23; //screenshake function but only for player portrait
+const int FUNC_BOSSSHAKE = 24; //screenshake function but only for boss portrait
+const int FUNC_MUSICSYNCTOGGLE = 25; //toggle music syncing on/off
+const int FUNC_TARGETBEAT = 26; //set target beat for music syncing
+const int FUNC_BUBBLEPOS = 28; //manually sets bubble position instead of lookup table
+const int FUNC_BUBBLETYPE = 29; //special types for thought bubbles/other callouts/color.  two args, one for type, one for color
+const int FUNC_CINEMATIC = 30; //cinematic event (replaces GFW route select fxn) (just use a function pointer... it'll be so much easier)
+
+// note to self: when calling a function using FUNC_CINEMATIC, make sure it doesn't do anything funny that accesses local variables
+// function pointers can't access stuff that's out of general scope (hooray) so when doing this, it gives some ???? errors that make no sense
+// use common data or event notify to "flip a switch" in a given stage
+
+const int[] FUNC_ARGC = [0, 1, 1, 2, 0, 0, 1, 1, -1, -1, 1, 1, -1, 1, 1, -1, -1, 1, -1, 0, -1, -1, 0, -1, -1, 1, 1, -1, 2, 1, 0];
+
+const int PLAYER_X_SPEAKING = -450; //0, -300
+const int PLAYER_X = -514; //-64, -364
+const int BOSS_X_SPEAKING = 360; //1000
+const int BOSS_X = 424; //1000+64
+
+//Normal variables for flow
+	bool DialogueOn = false;
+	int Timeout = 0;
+	bool shotPress = false;
+	bool shotHold = false;
+	bool pressEnable = true;
+
+	bool ChangeExprFlag = false;
+	int[] portraits = [];
+	int textboxId = ID_INVALID;
+	int bubbleType = BUBBLE_NORMAL;
+	int FocusSide = SIDE_NOONE;
+	int PrevSide = SIDE_NOONE;
+	float[] nextTextCoord = [-999, -999];
+
+	bool musicSync = false;
+	int targetBeat = -999;
+
+/********************************
+EXTERNAL DIALOGUE FUNCTIONS
+********************************/
+
+function MSGFunction(int num, int[] args) {
+
+	//MSG function handling
+	const int[] FUNC_PTRS = [			__funcptr(DialogueEvent_Toggle, 0),
+	__funcptr(PlayerPortrait_Show, 1), 	__funcptr(BossPortrait_Show, 1),
+	__funcptr(Portrait_Show, 2),		__funcptr(PlayerPortrait_Hide, 0),
+	__funcptr(BossPortrait_Hide, 0),	__funcptr(Portrait_Hide, 1),
+	__funcptr(SetSpeaker, 1),			ID_INVALID,
+	ID_INVALID,							__funcptr(SetPressEnable, 1),
+	__funcptr(SetTextTimer, 1),			ID_INVALID,
+	__funcptr(ChangeExpr_Player, 1),	__funcptr(ChangeExpr_Boss, 1),
+	ID_INVALID,							ID_INVALID,
+	__funcptr(Dialogue_SetText, 1),		ID_INVALID,
+	__funcptr(Dialogue_BossBGM, 0),		ID_INVALID,
+	ID_INVALID,							__funcptr(Dialogue_FadeBGM, 0),
+	ID_INVALID,							ID_INVALID,
+	__funcptr(SetMusicSyncEnable, 1),	__funcptr(SetTargetBeat, 1),
+	ID_INVALID,							__funcptr(Dialogue_SetNextBubblePos, 2),
+	__funcptr(Dialogue_BubbleType, 1),	__funcptr(Dialogue_Cinematic, 0)
+	];
+
+	//WriteLog(ToString(FUNC_PTRS));
+
+	if (num > length(FUNC_PTRS)) {
+		const int MB_ICONWARNING = 0x00000030;
+      	RaiseMessageWindow("Uh Oh RoEW!", "Invalid MSG function index.", MB_ICONWARNING);
+      	return DEFAULT_INT;
+	}
+	if (FUNC_PTRS[num] == ID_INVALID) {
+		const int MB_ICONWARNING = 0x00000030;
+      	RaiseMessageWindow("Uh Oh RoEW!", "Invalid MSG function index.", MB_ICONWARNING);
+      	return DEFAULT_INT;
+	}
+
+	const int funcId = FUNC_PTRS[num];
+	alternative(length(args))
+	case(0) {
+		invoke(funcId);
+	}
+	case(1) {
+		invoke(funcId, args[0]);
+	}
+	case(2) {
+		invoke(funcId, args[0], args[1]);
+	}
+	others {
+		const int MB_ICONWARNING = 0x00000030;
+      	RaiseMessageWindow("Uh Oh RoEW!", "Invalid number of arguments for MSG function.", MB_ICONWARNING);
+      	return DEFAULT_INT;
+	}
+	return 0;
+	
+	//Everything past here is scoped to avoid potential complications elsewhere...
+
+	function DialogueEvent_Init() {
+		SetForbidPlayerShot(true);
+		SetForbidPlayerSpell(true);
+		DialogueOn = true;
+		DialogueEvent_Maintain();
+	}
+
+	function DialogueEvent_Exit() {
+		SetForbidPlayerShot(false);
+		SetForbidPlayerSpell(false);
+		DialogueOn = false;
+		if(!Obj_IsDeleted(textboxId) && textboxId != ID_INVALID) {
+			FadeOutDialogueBox(textboxId);
+		}
+		/*for each (i in portraits) {
+			FadeOutPortrait(i);
+		}*/
+	}
+
+	function DialogueEvent_Toggle() {
+		if (!DialogueOn) {
+			DialogueEvent_Init();
+		}
+		else {
+			DialogueEvent_Exit();
+		}
+	}
+
+	function PlayerPortrait_Show(char_index) {
+		if (Obj_IsDeleted(portraits[SIDE_PLAYER])) {
+			portraits[SIDE_PLAYER] = CreatePortrait(CHAR_MISSINGNO, EXPRESSION_NORMAL, SIDE_PLAYER);
+		}
+		Obj_SetValueI(portraits[SIDE_PLAYER], INDEX_CHAR, char_index);
+		Obj_SetVisible(portraits[SIDE_PLAYER],true);
+	}
+
+	function PlayerPortrait_Hide() {
+		//Obj_SetVisible(portraits[SIDE_PLAYER],false);
+		FadeOutPortrait(portraits[SIDE_PLAYER]);
+	}
+
+	function BossPortrait_Show(char_index) {
+		if (Obj_IsDeleted(portraits[SIDE_BOSS])) {
+			portraits[SIDE_BOSS] = CreatePortrait(CHAR_MISSINGNO, EXPRESSION_NORMAL, SIDE_BOSS);
+		}
+		Obj_SetValueI(portraits[SIDE_BOSS], INDEX_CHAR, char_index);
+		Obj_SetVisible(portraits[SIDE_BOSS],true);
+	}
+
+	function BossPortrait_Hide() {
+		//Obj_SetVisible(portraits[SIDE_BOSS],false);
+		FadeOutPortrait(portraits[SIDE_BOSS]);
+	}
+
+	function Portrait_Show(side, char_index) {
+		Obj_SetValueI(portraits[side], INDEX_CHAR, char_index);
+		Obj_SetVisible(portraits[side],true);
+	}
+
+	function Portrait_Hide(side) {
+		Obj_SetVisible(portraits[side],false);
+	}
+
+	function SetSpeaker(side) {
+		FocusSide = side;
+	}
+
+	function SetPressEnable(argument) {
+		pressEnable = argument;
+	}
+
+	function SetTextTimer(frames) {
+		Timeout = frames;
+		//WriteLog("Set Timeout to " ~ IntToString(frames));
+	}
+
+	function ChangeExpr_Player(expression) {
+		Obj_SetValueI(portraits[SIDE_PLAYER], INDEX_EXPR, expression);
+		const int char_index = Obj_GetValueI(portraits[SIDE_PLAYER], INDEX_CHAR);
+		ObjPrim_SetTexture(portraits[SIDE_PLAYER], CreateImagePath(char_index,expression));
+		ObjSprite2D_SetSourceRect(portraits[SIDE_PLAYER], 0, 0, CHAR_SOURCE_RECTS[char_index][0], CHAR_SOURCE_RECTS[char_index][1]);
+		ObjSprite2D_SetDestRect(portraits[SIDE_PLAYER], 0, 0, CHAR_SOURCE_RECTS[char_index][0], CHAR_SOURCE_RECTS[char_index][1]);
+		float sc = CHAR_SCALE[Obj_GetValueI(portraits[SIDE_PLAYER], INDEX_CHAR)];
+		ObjRender_SetScaleXYZ(portraits[SIDE_PLAYER], sc, sc, 1);
+	}
+
+	function ChangeExpr_Boss(expression) {
+		Obj_SetValueI(portraits[SIDE_BOSS], INDEX_EXPR, expression);
+		const int char_index = Obj_GetValueI(portraits[SIDE_BOSS], INDEX_CHAR);
+		ObjPrim_SetTexture(portraits[SIDE_BOSS], CreateImagePath(char_index,expression));
+		ObjSprite2D_SetSourceRect(portraits[SIDE_BOSS], 0, 0, CHAR_SOURCE_RECTS[char_index][0], CHAR_SOURCE_RECTS[char_index][1]);
+		ObjSprite2D_SetDestRect(portraits[SIDE_BOSS], 0, 0, CHAR_SOURCE_RECTS[char_index][0], CHAR_SOURCE_RECTS[char_index][1]);
+		float sc = CHAR_SCALE[Obj_GetValueI(portraits[SIDE_BOSS], INDEX_CHAR)];
+		ObjRender_SetScaleXYZ(portraits[SIDE_BOSS], sc, sc, 1);
+	}
+
+	function Dialogue_SetText(text) {
+		if(!Obj_IsDeleted(textboxId) && textboxId != ID_INVALID) {
+			FadeOutDialogueBox(textboxId);
+			textboxId = ID_INVALID;
+		}
+		int char_id = Obj_GetValueDI(portraits[FocusSide], INDEX_CHAR, CHAR_RIKA);
+		float[] coords = [ CHAR_TEXTBOX_COORDS[char_id][0], CHAR_TEXTBOX_COORDS[char_id][1] ];
+		if (nextTextCoord[0] != -999f && nextTextCoord[1] != -999f) {
+			coords = [ nextTextCoord[0], nextTextCoord[1] ];
+			nextTextCoord = [-999, -999];
+		}
+		textboxId = CreateDialogueBox(coords[0], coords[1], AlignTextFix(GetAreaCommonData("Dialogue","Text",[])[text]));
+	}
+
+	function Dialogue_BossBGM() {
+		string key = GetAreaCommonData("Dialogue", "bossbgm", "");
+		if (key != "") {
+			PlayMusic(key);
+		}
+
+		function PlayMusic(string sfxstr) { // alternate version for alternate comparison X value
+		  NotifyEvent(GetAreaCommonData("Reserved","AudioScriptID",ID_INVALID), EV_PLAY_BGM, sfxstr);
+		}
+	}
+
+	function Dialogue_FadeBGM() {
+		StopMusic(); //Fade Out isn't working, rip.
+
+		function StopMusic() {
+		  NotifyEvent(GetAreaCommonData("Reserved","AudioScriptID",ID_INVALID), EV_STOP_BGM, 0);
+		}
+	}
+
+	function SetMusicSyncEnable(argument) {
+		musicSync = argument;
+	}
+
+	function SetTargetBeat(beat) {
+		Timeout = 600;
+		targetBeat = beat;
+	}
+
+	function Dialogue_SetNextBubblePos(x, y) {
+		nextTextCoord = [x, y];
+	}
+
+	function Dialogue_BubbleType(type) {
+		bubbleType = type;
+	}
+
+	function Dialogue_Cinematic() {
+		const int fptr = GetAreaCommonData("Dialogue", "cinematic", ID_INVALID);
+		if (fptr != ID_INVALID) {
+			invoke(fptr);
+		}
+	}
+
+	/********************************
+	INTERNAL DIALOGUE FUNCTIONS
+	********************************/
+
+	task DialogueEvent_Maintain() {
+		int portrait_pl = CreatePortrait(CHAR_MISSINGNO, EXPRESSION_NORMAL, SIDE_PLAYER);
+		int portrait_gn = CreatePortrait(CHAR_MISSINGNO, EXPRESSION_NORMAL, SIDE_GENJI);
+		int portrait_bs = CreatePortrait(CHAR_MISSINGNO, EXPRESSION_NORMAL, SIDE_BOSS);
+		
+		portraits = [portrait_pl, portrait_bs, portrait_gn];
+		while(DialogueOn) {
+			//WriteLog("maintenance running - time out value: " ~ IntToString(Timeout) ~ ", textbox ID = " ~ IntToString(textboxId) ~ ", is text deleted? " ~ ToString(Obj_IsDeleted(textboxId)) );
+			SetAreaCommonData("Dialogue", "Wait_", true);
+			if (FocusSide != PrevSide) {
+				for each (i in portraits) {
+					if (!Obj_IsDeleted(i) && i != ID_INVALID) {
+						SpeakerPortrait(i);
+					}
+				}
+				PrevSide = FocusSide;
+			}
+			if ((!Obj_IsDeleted(textboxId) && textboxId != ID_INVALID) && Timeout > 0) {
+				//WriteLog("waiting for shot press...");
+				if (musicSync) {
+					WaitForTargetBeat();
+				}
+				else {
+					WaitForShotPress();
+				}
+			}
+
+			//here is where MSG function queue gets executed.
+			yield;
+		}
+	}
+
+	function CreatePortrait(char_index, expression, side) {
+		let obj = ObjPrim_Create(OBJ_SPRITE_2D);
+		let path = CreateImagePath(char_index, expression);
+		Obj_SetValueI(obj, INDEX_CHAR, char_index);
+		Obj_SetValueI(obj, INDEX_EXPR, expression);
+		Obj_SetValueI(obj, INDEX_SIDE, side);
+		ObjPrim_SetTexture(obj, path);
+		ObjSprite2D_SetSourceRect(obj, 0, 0, CHAR_SOURCE_RECTS[char_index][0], CHAR_SOURCE_RECTS[char_index][1]);
+		ObjSprite2D_SetDestRect(obj, 0, 0, CHAR_SOURCE_RECTS[char_index][0], CHAR_SOURCE_RECTS[char_index][1]);
+		if (side == SIDE_PLAYER || side == SIDE_GENJI) {
+			ObjRender_SetX(obj, PLAYER_X);
+		}
+		else {
+			ObjRender_SetX(obj, BOSS_X);
+		}
+		ObjRender_SetY(obj, 0);
+		Obj_SetVisible(obj, false);
+		return obj;
+	}
+
+	function SpeakerPortrait(obj) {
+		int side = Obj_GetValueI(obj, INDEX_SIDE);
+		bool outOrIn = false;
+		if (FocusSide == side) {
+			outOrIn = true;
+		}
+		float startingX = PLAYER_X;
+		float destX = PLAYER_X_SPEAKING;
+		int flip = 1;
+		if (outOrIn) { //fading in
+			if (side == SIDE_PLAYER || side == SIDE_GENJI) {
+				startingX = PLAYER_X;
+				destX = PLAYER_X_SPEAKING;
+			}
+			else {
+				startingX = BOSS_X;
+				destX = BOSS_X_SPEAKING;
+				flip = -1;
+			}
+			if (ObjRender_GetX(obj) == destX) {
+				return;
+			}
+			Obj_SetRenderPriorityI(obj, 92);
+			float interpol = 0f;
+			ascent(i in 0..10) {
+				interpol = Interpolate_Modulate(interpol, 64, -1, 0.4);
+				ObjRender_SetColor(obj, 192+interpol, 192+interpol, 192+interpol);
+				ObjRender_SetX(obj, startingX + interpol*flip);
+				yield;
+			}
+			ObjRender_SetX(obj, destX);
+			ObjRender_SetColor(obj, 255, 255, 255);
+		}
+		else { //fading out
+			if (side == SIDE_PLAYER || side == SIDE_GENJI) {
+				startingX = PLAYER_X_SPEAKING;
+				destX = PLAYER_X;
+			}
+			else {
+				startingX = BOSS_X_SPEAKING;
+				destX = BOSS_X;
+				flip = -1;
+			}
+			if (ObjRender_GetX(obj) == destX) {
+				return;
+			}
+			Obj_SetRenderPriorityI(obj, 91);
+			float interpol = 0f;
+			ascent(i in 0..10) {
+				interpol = Interpolate_Modulate(interpol, 64, -1, 0.4);
+				ObjRender_SetColor(obj, 255-interpol, 255-interpol, 255-interpol);
+				ObjRender_SetX(obj, startingX - interpol*flip);
+				yield;
+			}
+			ObjRender_SetX(obj, destX);
+			ObjRender_SetColor(obj, 192, 192, 192);
+		}
+		
+	}
+
+	function FadeOutPortrait(obj) {
+		float interpol = 255f;
+		ascent(i in 0..10) {
+			interpol = Interpolate_Modulate(interpol, 0, -1, 0.4);
+			ObjRender_SetAlpha(obj, interpol);
+			yield;
+		}
+		Obj_Delete(obj);
+		return ID_INVALID;
+	}
+
+	function<string> CreateImagePath(char_index, expression) {
+		return IMAGE_PATH_START ~ CHAR_PATHTABLE[char_index] ~ IntToString(expression) ~ IMAGE_ENDER;
+	}
+
+	function WaitForShotPress() {
+		shotPress = GetVirtualKeyState(VK_SHOT) == KEY_PUSH;
+		shotHold = GetVirtualKeyState(VK_SHOT) == KEY_HOLD;
+		SetAreaCommonData("Dialogue", "Wait_", true);
+		while(Timeout > 0 && (!shotPress || shotHold)) {
+			shotPress = GetVirtualKeyState(VK_SHOT) == KEY_PUSH;
+			shotHold = GetVirtualKeyState(VK_SHOT) == KEY_HOLD;
+			if (!pressEnable) {
+				shotPress = false;
+				shotHold = true;
+			}
+			Timeout--;
+			//WriteLog(ToString(Timeout > 0 && (!shotPress || shotHold)));
+			yield;
+		}
+		SetAreaCommonData("Dialogue", "Wait_", false);
+	}
+
+	function WaitForTargetBeat() {
+		SetAreaCommonData("Dialogue", "Wait_", true);
+		yield;
+		waitUntilBeat(targetBeat);
+		Timeout = 0;
+		SetAreaCommonData("Dialogue", "Wait_", false);
+
+		function<float> GetCurrentBeat() {
+		  NotifyEvent(GetAreaCommonData("Reserved","AudioScriptID",ID_INVALID), EV_MUSIC_INFO, 0);
+		  return GetAreaCommonData("Reserved", "BGMBeat", -999999);
+		}
+
+		function<void> waitUntilBeat(beat) {
+		  while(GetCurrentBeat() < beat) {
+		    yield;
+		  }
+		}
+	}
+
+	function CreateDialogueBox(x, y, text) { //x,y of bottom "speaking" part of speech bubble, text string of dialogue box
+		
+		int flipFlag = 1;
+		if (FocusSide == SIDE_BOSS) {
+			flipFlag = -1;
+		}
+
+		let objText = ObjText_Create();
+		ObjText_SetText(objText, text);
+		ObjText_SetFontType(objText, "Arial");
+	    ObjText_SetFontSize(objText, 32);
+	    ObjText_SetFontBold(objText, false);
+	    ObjText_SetFontColorTop(objText, 255, 255, 255);
+	    ObjText_SetFontColorBottom(objText, 255, 255, 255);
+	    ObjText_SetFontBorderType(objText, BORDER_FULL);
+	    ObjText_SetFontBorderColor(objText,0, 0, 0);
+	    ObjText_SetFontBorderWidth(objText, 3);
+	    ObjText_SetMaxWidth(objText, 600);
+	    ObjText_SetHorizontalAlignment(objText, ALIGNMENT_LEFT);
+	    Obj_SetRenderPriorityI(objText, 95); //65
+
+	    /*if (flipFlag == -1) {
+	    	ObjText_SetHorizontalAlignment(objText, ALIGNMENT_RIGHT);
+	    }*/
+
+		let obj = ObjPrim_Create(OBJ_PRIMITIVE_2D);
+		ObjPrim_SetPrimitiveType(obj, PRIMITIVE_TRIANGLELIST);
+
+		const string BUBBLE_BASE = "script/img/system/";
+		const string[] BUBBLE_PATHS = ["text_bubbles.png", "thought_bubbles.png"];
+
+		ObjPrim_SetTexture(obj, BUBBLE_BASE ~ BUBBLE_PATHS[bubbleType]);
+		ObjPrim_SetVertexCount(obj, 20);
+		Obj_SetRenderPriorityI(obj, 94); //30
+
+		const int secretSauceX = 24;
+		const int secretSauceY = 0;
+
+		float wid = max(2, ceil((ObjText_GetTotalWidth(objText) + 24) / 8) / 4);
+		int len = max(2, ceil((ObjText_GetTotalHeight(objText) + 0) / 32));
+
+		int[] widths = [0, 64, 64*(wid-1), 64*wid, 64*(wid+1)];
+		int[] heights = [0, 64, 64*(len-1), 64*len, 64*(len+1)];
+
+		int ind = 0;
+		for(int i = 0; i < 4; i++) {
+			for(int j = 0; j < 4; j++) {
+				ObjPrim_SetVertexPosition(obj, ind, widths[j], heights[i], 0);
+				ObjPrim_SetVertexUVT(obj, ind, 64*j, 64*i);
+				ind++;
+			}
+		}
+
+		ObjPrim_SetVertexPosition(obj, 16, 0, 64*(len+1), 0);
+		ObjPrim_SetVertexUVT(obj, 16, 0, 256);
+		ObjPrim_SetVertexPosition(obj, 17, 64, 64*(len+1), 0);
+		ObjPrim_SetVertexUVT(obj, 17, 64, 256);
+
+		const let row = [ [0, 1, 4], [1, 4, 5], [1, 2, 5], [2, 5, 6], [2, 3, 6], [3, 6, 7] ];
+
+		function IncrementRow(y) {
+			let ret = row;
+			loop(y) {
+				for(int a = 0; a < 6; a++) {
+					for(int b = 0; b < 3; b++) {
+						ret[a][b] = ret[a][b] + 4;
+					}
+				}
+			}
+			//WriteLog(ToString(ret));
+			return ret;
+		}
+
+		
+		int[] finalPrim = [];
+
+		for(int i = 0; i < 3; i++) {
+			let row_temp = IncrementRow(i);
+			for(int j = 0; j < 3; j++) {
+				finalPrim = finalPrim ~ row_temp[j*2];
+				finalPrim = finalPrim ~ row_temp[j*2+1];
+			}
+		}
+
+		{ //putting this in its own set of braces so row_temp isn't usable outside of it
+			let row_temp = IncrementRow(3);
+			finalPrim = finalPrim ~ row_temp[0];
+			finalPrim = finalPrim ~ row_temp[1];
+		}
+
+		ObjPrim_SetVertexIndex(obj, finalPrim);
+
+		/*
+		int amount_to_wait = 0;
+		ind = 0;
+		for(int i = 0; i < len; i++) {
+			ind += 6;
+			for(int j = 1; j < wid; j++) {
+				for(int k = 0; k < 6; k++) {
+					let decr = -1;
+					//if (j == wid-1) { decr = -2; }
+					let vert = ObjPrim_GetVertexPosition(obj, ind);
+					ObjPrim_SetVertexPosition(obj, ind, vert[0] + max(64*(j+decr),0), vert[1] + max(64*(i+decr),0), 0);
+					ind++;
+				}
+			}
+		}*/
+		//dialogue box created!  now to scale it properly and put it in the right spot
+
+		Obj_SetValueI(obj, 0, objText); //now the text is properly attached to the dialogue box
+		ObjRender_SetScaleXYZ(obj, 0, 0, 1); //max scale 0.5
+		
+		let x_off = x;
+		if (flipFlag == -1) {
+			x_off = x - (32*wid) + 10;
+		}
+		
+		Obj_SetValueI(obj, 1, flipFlag);
+		let y_off = y - (len+1)*32;
+		ObjRender_SetPosition(obj, x, y_off, 0);
+		ObjRender_SetPosition(objText, x_off + 10, y_off + 10, 0);
+		ObjRender_SetAlpha(objText, 0); //base alpha 255
+		FadeInDialogueBox(obj);
+
+		return obj;
+	}
+
+	task FadeInDialogueBox(obj) {
+		let objText = Obj_GetValueI(obj, 0);
+		int flip = Obj_GetValueI(obj, 1, 1);
+		float interpol = 0f;
+		ascent(i in 0..10) {
+			interpol = Interpolate_Modulate(interpol, 0.5, -1, 0.4);
+			ObjRender_SetScaleXYZ(obj, flip*interpol, interpol, interpol);
+			yield;
+		}
+		interpol = 0f;
+		ascent(i in 0..10) {
+			interpol = Interpolate_Modulate(interpol, 255, -1, 0.4);
+			ObjRender_SetAlpha(objText, interpol);
+			yield;
+		}
+	}
+
+	task FadeOutDialogueBox(obj) {
+		let objText = Obj_GetValueI(obj, 0);
+		int flip = Obj_GetValueI(obj, 1, 1);
+		float interpol = 255f;
+		ascent(i in 0..10) {
+			interpol = Interpolate_Modulate(interpol, 0, -1, 0.4);
+			ObjRender_SetAlpha(objText, interpol);
+			yield;
+		}
+		interpol = 0.5;
+		ascent(i in 0..10) {
+			interpol = Interpolate_Modulate(interpol, 0, -1, 0.4);
+			ObjRender_SetScaleXYZ(obj, flip*interpol, interpol, interpol);
+			yield;
+		}
+		DeleteDialogueBox(obj);
+		return;
+	}
+
+	function DeleteDialogueBox(obj) {
+		Obj_Delete(Obj_GetValueI(obj, 0));
+		Obj_Delete(obj);
+		return ID_INVALID;
+	}
+}
+
+function AlignTextFix(text) {
+	//EUB ripped fxn, change implementation later?
+	string outputText = "";
+	string[] listWord = SplitString(text," ");
+	int count = 0;
+	int countTotal = 0;
+	bool hasQuotes = false;
+	int lengthWord = 0;
+	const int lengthLimit = 37;
+
+	//DANMAKUFU DOESN'T HAVE A SUBSTRING COMMAND I HATE THIS GODDAMN PROGRAM -wish <3
+	/*
+	if (SplitString(text,"ruby") != [text]) { //"ruby"
+		return text;
+	}*/
+
+	//WriteLog(ToString(listWord));
+	
+
+	ascent(i in 0..length(listWord)) {
+		//WriteLog("Current count:" ~ rtoa(count));
+		//WriteLog("Current word:" ~ listWord[i]);
+		lengthWord = length(listWord[i]);
+		//WriteLog("Current word length:" ~ rtoa(lengthWord));
+
+		if(listWord[i] == "[r]"){
+			//WriteLog("Making a new line due to line break.");
+			count = 0;
+		}
+
+		if(lengthWord>=6){
+			if(slice(listWord[i], 0, 6) == "&quot;"){ //if the first 6 chars of a "word" are a quotation mark, reduce count by 5 (so when it's increased at the end, it's counted as 1 char instead of 6) --> necessary because the game thinks that a quotation mark is 6 when it's 1
+				//WriteLog("Quotation mark special exemption - beginning.");
+				count-=5;
+			}
+			if(slice(listWord[i], lengthWord-6, lengthWord) == "&quot;"){ //if the last 6 chars of a "word" are a quotation mark, reduce count by 5 (so when it's increased at the end, it's counted as 1 char instead of 6) --> necessary because the game thinks that a quotation mark is 6 when it's 1
+				//WriteLog("Quotation mark special exemption - ending");
+				count-=5;
+			}
+		}
+
+		if((count+length(listWord[i])<=lengthLimit) && (count > 0) ) {
+			outputText = outputText ~ " ";
+			count++;
+			//countTotal++;
+		}
+
+		if(count+length(listWord[i])>lengthLimit) {
+			//WriteLog("Making a new line due to length being too long.");
+			outputText = outputText ~ "[r]";
+			count = 0;
+		}
+
+		if(listWord[i] != "[r]") {
+			count+=length(listWord[i]);
+		}
+		//countTotal+=length(listWord[i]);
+		outputText = outputText ~ listWord[i];
+	}
+	//WriteLog(outputText);
+	return outputText;
+}

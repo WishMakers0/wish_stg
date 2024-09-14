@@ -1,0 +1,204 @@
+// Detail the goals of this item script:
+
+// Power - make sure power auto-scales as needed. (NUKED, item script does auto-handle power progression though.)
+
+// Point items - base rate 10k, give score according to multiplier, base rate, and y-position (bottom of the screen is 30%, right before PoC line is 70%, PoC line is 100%)
+// Hakurei items - how will these work for Legacy mode?  otherwise boost hyper gauge
+// Dream items - these elusive bitches... finalize their behavior.  Please.
+// Star items - coming from cancels, 1/10 of a point item, always auto-collected, boosts combo by a bit
+// Wonder-Reimu/Wonder-Marisa - secret items!!  they are going to work similarly to ESCHATOS on a per-screen basis, one per stage, immense score bonus, worth more per amount collected
+// Items are rotating???  Great, gonna have to animate them all xd
+
+// Auto-collecting items - PoC line, bombs
+// Handle PoC chaining and bonuses here too perhaps.
+// Have a flag for RoEW-related item behavior, and disabling it just has standard item behavior.
+// Have a flag for locking the player's power level to 4 (max).  Useful for individual scripts and the like.
+
+// This feels like a goliath but hopefully it's not so bad... refer to EUB code for an example, but don't follow it like gospel...
+// https://sparen.github.io/ph3tutorials/docs_standard.html#sub17
+
+#include "script/system/wish_event.dnh-sys"
+
+const int IT_POINT = 1;
+const int IT_HAKUREI = 2;
+const int IT_DREAM = 3;
+const int IT_STAR = 4;
+const int IT_WONDERMARISA = 5;
+const int IT_LIFE = 7;
+const int IT_SPELL = 8;
+const int IT_POINT_HYPER = 10;
+
+float PIV_PURE = 10000;
+int PIV_ROUNDED = 10000;
+int PIV_ADJUSTED = 10000;
+
+float MULTIPLIER = 1;
+int MULTIPLIER_TIMER = 0;
+const int MAX_MULT_TIMER = 600;
+
+const int DESIRED_SIZE_PX = 48;
+const float SCALE_ITEMS = DESIRED_SIZE_PX / 100; // translating 100x100 item sprites to 48x48
+const int POC_HEIGHT = 256; //og touhou's is at 128px?
+
+@Initialize {
+	LoadItemData("script/system/wish_itemData.dnh-lib");
+	SetAreaCommonData("System", "PoC_height", POC_HEIGHT);
+	SetAreaCommonData("Reserved", "ItemScriptID", GetOwnScriptID());
+}
+
+@MainLoop {
+	SetAdjustedPIV();
+	MultiplierHandlerPerFrame();
+	yield;
+}
+
+@Event {
+	alternative(GetEventType())
+	case(EV_GET_ITEM) {
+		int itemType = GetEventArgument(0);
+		int objItem = GetEventArgument(1);
+		int score = 0;
+		const int[] c_gold = [255, 255, 0];
+		const int[]	c_white = [255, 255, 255];
+		const int[] c_green = [0, 255, 0];
+		int[] color = c_white;
+
+		alternative(itemType)
+		case(IT_POINT) {
+			score = CalcScoreItem(false);
+
+			if (score == PIV_ADJUSTED) {
+				color = c_gold;
+			}
+
+			AddScore(score);
+			PointTextRender(score, color);
+		}
+	}
+	case(EV_CREATE_ITEM) {
+		int itemType = GetEventArgument(0);
+		float itemX = GetEventArgument(1);
+		float itemY = GetEventArgument(2);
+		int rPrio = 49;
+		bool setDelayedAutoCollect = false;
+
+		alternative(itemType)
+		case(IT_STAR) {
+			setDelayedAutoCollect = true;
+		}
+
+		int objItem = CreateItemU1(itemType, itemX, itemY, 0);
+		Obj_SetRenderPriorityI(objItem, rPrio);	//EUB does this for some reason, so I'll define render prio jic
+		ObjRender_SetScaleXYZ(objItem, SCALE_ITEMS, SCALE_ITEMS, SCALE_ITEMS);
+		ObjItem_SetRenderScoreEnable(objItem, false);
+
+		ObjItem_SetDefinedMovePatternA1(objItem, ITEM_MOVE_DOWN);
+
+		if (setDelayedAutoCollect) {
+			DelayedAutoCollect(objItem);
+		}
+
+		//shockingly like... this is it.  no need for EUB's messy chain of tasks *per item* like... this is truly all you need
+		//the only real exception would be if you had some kinda aura around items a la yuke, which I currently don't
+		//or VYCM's chain counters...
+	}
+}
+
+function MultiplierHandlerPerFrame() {
+	DebugMultTest();
+
+	MULTIPLIER_TIMER--;
+
+	if (MULTIPLIER_TIMER < 0) {
+		MULTIPLIER -= 0.01;
+	}
+
+	MULTIPLIER = max(min(MULTIPLIER, 10.0), 1.0);
+	MULTIPLIER_TIMER = max(min(MULTIPLIER_TIMER, MAX_MULT_TIMER), 0);
+
+	SetAreaCommonData("System", "Multiplier", MULTIPLIER);
+	SetAreaCommonData("System", "MultTimer", MULTIPLIER_TIMER);
+}
+
+function DebugMultTest() {
+	if (GetAreaCommonData("System", "MultTimer", 0) != MULTIPLIER_TIMER) {
+		MULTIPLIER_TIMER = GetAreaCommonData("System", "MultTimer", 0);
+	}
+	if (GetAreaCommonData("System", "Multiplier", 0) != MULTIPLIER) {
+		MULTIPLIER = GetAreaCommonData("System", "Multiplier", 1);
+	}
+}
+
+function SetAdjustedPIV() {
+	float piv = PIV_PURE;
+	// do intermittent multiplier calculations and junk here
+	PIV_ROUNDED = ShaveToNearestTen(PIV_PURE);
+	PIV_ADJUSTED = ShaveToNearestTen(piv);
+	SetAreaCommonData("System", "PIV", PIV_ROUNDED);
+}
+
+function<int> ShaveToNearestTen(float n) {
+	return (floor(n / 10) * 10);
+}
+
+function<int> CalcScoreItem(bool wasPOCd) {
+	float ratio = (GetPlayerY() - POC_HEIGHT) / (GetStgFrameHeight() - POC_HEIGHT);
+
+	if (wasPOCd) {
+		ratio = -1;
+	}
+
+	if (ratio <= 0) {
+		return PIV_ADJUSTED;
+	}
+	else {
+		//ratio had to be inverted cuz I realized it didn't work as expected
+		return ShaveToNearestTen(PIV_ADJUSTED * (0.3 + ((1-ratio) * 0.4))); //between 30% and 70% of adjusted PIV depending on screen height
+	}
+}
+
+task DelayedAutoCollect(int objItem) {
+	wait(60);
+	ObjItem_SetDefinedMovePatternA1(objItem, ITEM_MOVE_TOPLAYER);
+}
+
+task PointTextRender(int scoreNum, int[] rgb) {
+
+}
+
+//@function CreatePointItem
+//@param	{float}		x 	x-position
+//@param	{float}		y   y-position
+//@description	Point items -  base rate 10k, give score according to multiplier, base rate, and y-position (bottom of the screen is 30%, right before PoC line is 70%, PoC line is 100%)
+//@return	{int}
+
+//wow this code ended up being worthless
+/*
+function<int> CreatePointItem(float x, float y) {
+	int objItem = CreateItemU1(IT_POINT, x, y, 0);
+	Obj_SetRenderPriorityI(objItem, 49);	//EUB does this for some reason
+	ObjRender_SetScaleXYZ(objItem, SCALE_ITEMS, SCALE_ITEMS, SCALE_ITEMS);
+	ObjItem_SetRenderScoreEnable(objItem, false);
+}
+
+//Default item auto-collection behavior
+task ItemCollectA(int objItem, int itemID) {
+	int radius = 40;
+	int state = STATE_NORMAL;
+	int score = 0;
+	bool stopAutoCol = false;
+	ObjItem_SetDefinedMovePatternA1(objItem, ITEM_MOVE_DOWN);
+
+	while(!Obj_IsDeleted(objItem)) {
+		state = GetPlayerState();
+
+		if ((state == STATE_HIT) || (state == STATE_DOWN)) { stopAutoCol = true; }
+
+		if (stopAutoCol) {
+
+		}
+
+		yield;
+	}
+}
+*/

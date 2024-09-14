@@ -1,0 +1,5 @@
+//test
+
+function MD_Path(rest) {
+	return GetModuleDirectory ~ "/script/" ~ rest;
+}

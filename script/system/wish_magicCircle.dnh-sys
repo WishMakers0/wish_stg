@@ -1,0 +1,233 @@
+#include "script/system/const_hud.dnh"
+
+//Shader global objects
+let sh_hueShift = ID_INVALID;
+let magicCircle = ID_INVALID;
+let magicCircle_copy = ID_INVALID;
+let circleCount = 0;
+
+let dirCurrent = GetCurrentScriptDirectory();
+let typeEnd = 0;
+let END_FAILED = 1;
+let END_SUCCESS = 2;
+
+@Initialize
+{
+    preload;
+	//MagicCircle();
+}
+
+@MainLoop
+{
+	yield;
+}
+
+@Event
+{
+	alternative(GetEventType())
+    case(EV_BOSS_START_SPELL)
+    {
+        MagicCircle;
+    }
+	case(EV_END_BOSS_STEP)
+	{
+		//次の敵動作へ
+		if(typeEnd == 0)
+		{
+			//スペルカード取得失敗
+			typeEnd = END_FAILED;
+		}
+	}
+	case(EV_GAIN_SPELL)
+	{
+		//スペルカード取得
+		typeEnd = END_SUCCESS;
+	}
+}
+
+task preload {
+	wait(1);
+	magicCircle = ObjShader_Create();
+	let magicCircle_path = "Script/LIB/PS_mask_spellcircle.hlsl";
+	ObjShader_SetShaderF(magicCircle,magicCircle_path);
+	magicCircle_copy = ObjShader_Create();
+	ObjShader_SetShaderF(magicCircle_copy,magicCircle_path);
+	sh_hueShift = ObjShader_Create();
+	let pathToThing = "Script/LIB/PS_HueShiftHLSL.dnh";
+	ObjShader_SetShaderF(sh_hueShift,pathToThing);
+	LoadTexture(magicCircle);
+	LoadTexture(magicCircle_copy);
+
+}
+
+task MagicCircle {
+
+	let path = CSD ~ "IMG/SpellCircle.png";
+	let obj = ObjPrim_Create(OBJ_SPRITE_2D);
+	ObjRender_SetBlendType(obj, BLEND_ADD_RGB);
+	Obj_SetRenderPriorityI(obj, 30);
+	ObjPrim_SetTexture(obj, path);
+	ObjSprite2D_SetSourceRect(obj, 0, 0, 1024, 1024);
+	ObjSprite2D_SetDestRect(obj, 0, 0, 1024, 1024);
+	ObjSprite2D_SetDestCenter(obj);
+
+
+	//shader stuffs
+	circleCount++;
+	let objShader;
+	if (circleCount % 2 == 1) {
+		objShader = magicCircle;
+	}
+	else {
+		objShader = magicCircle_copy;
+	}
+
+	ObjShader_SetTechnique(objShader,"TecPass");
+	let check = ObjShader_SetShaderO(obj,objShader);
+	//WriteLog("Magic Circle Task Check: " ~ ToString(check));
+
+	let objScene = GetEnemyBossSceneObjectID();
+	let objBoss = GetEnemyBossObjectID()[0];
+	let timerOrg = ObjEnemyBossScene_GetInfo(objScene, INFO_ORGTIMERF);
+	let bLastSpell = ObjEnemyBossScene_GetInfo(objScene, INFO_IS_LAST_SPELL);
+
+	let scale = 1.2;
+	ObjRender_SetScaleXYZ(obj, scale, scale, scale);
+	let cx = 0;
+	let cy = 0;
+	ObjRender_SetColor(obj, 0, 0, 0);
+
+	let alpha = 0;
+	let frame = 0;
+	let angleRender = 0;
+
+	function GetPlayerX {
+		let objPlayer = GetPlayerObjectID();
+		return ObjRender_GetX(objPlayer);
+	}
+
+	function GetPlayerY {
+		let objPlayer = GetPlayerObjectID();
+		return ObjRender_GetY(objPlayer);
+	}
+
+	function UpdateVertex {
+		if(bLastSpell) {
+			ObjRender_SetColor(obj, 255 * alpha, 192 * alpha, 192 * alpha);
+		}
+		else {
+			ObjRender_SetColor(obj, 192 * alpha, 192 * alpha, 255 * alpha);
+		}
+
+		ObjRender_SetPosition(obj, cx, cy, 0);
+		ObjRender_SetAngleZ(obj, angleRender);
+		ObjRender_SetScaleXYZ(obj, scale, scale, scale);
+	}
+
+	//PlaySoundEffect("spell",100);
+	//if common data here
+	ObjShader_SetFloat(objShader, "time", frame);
+
+	while(typeEnd == 0) {
+		if(!Obj_IsDeleted(objBoss)) {
+			cx = ObjRender_GetX(objBoss);
+			cy = ObjRender_GetY(objBoss);
+			if(cx<-400 || GetCommonData("Spell Circle Center",false)) { cx = GetStgFrameWidth/2; cy = GetStgFrameHeight/2; }
+		}
+
+		alpha += 1 / 120;
+		alpha = min(alpha, 1);
+		angleRender += 4;
+		//let rateUndulate = 1 + (sin(frame * 5) * 0.1);
+
+		let timer = ObjEnemyBossScene_GetInfo(objScene, INFO_TIMERF);
+		let rRate = timer / timerOrg;
+		scale = 1.2 * rRate;
+
+
+		UpdateVertex();
+		frame++;
+		//if common data here
+		ObjShader_SetFloat(objShader, "time", frame);
+		ObjShader_SetShaderO(obj,objShader);
+		yield;
+	}
+
+	/*if(SpellID>136 && SpellID<141 && GetAreaCommonData("PlayState","Mode","")!="Spell Practice"){
+		loop(150){
+			if(!Obj_IsDeleted(objBoss)) {
+				cx = ObjRender_GetX(objBoss);
+				cy = ObjRender_GetY(objBoss);
+				if(cx<-400) { cx = GetStgFrameWidth/2; cy = GetStgFrameHeight/2; }
+			}
+
+			alpha += 1 / 120;
+			alpha = min(alpha, 1);
+			angleRender += 4;
+
+			let timer = ObjEnemyBossScene_GetInfo(objScene, INFO_TIMERF);
+			let rRate = timer / timerOrg;
+			scale = 1.2 * rRate;
+
+
+			UpdateVertex();
+			frame++;
+			//if common data here
+			ObjShader_SetFloat(obj, "time", frame);
+			ObjShader_SetShaderO(obj,objShader);
+			yield;
+		}
+	}*/
+
+
+	if(typeEnd == END_FAILED) {
+		alpha = 1;
+		loop(150) {
+			alpha -= 0.01;
+			alpha = max(alpha,0);
+			angleRender += 4;
+			UpdateVertex();
+			yield;
+		}
+		Obj_Delete(obj);
+		return;
+	}
+
+	let rRate = 1.0;
+	frame = 0;
+	alpha = 1;
+	let weightX = 1;
+	let weightY = 1;
+	scale = 1;
+
+	loop(105) {
+		angleRender += 4;
+		let dx = (GetPlayerX() - cx) / 8;
+		let dy = (GetPlayerY() - cy) / 8;
+		cx += dx;
+		cy += dy;
+		scale = max(0,scale - 0.01);
+		if(frame >= 45)
+		{
+			if(frame == 45) {
+				//if common data here (TecSpell)
+				ObjShader_SetTechnique(objShader,"TecSpell");
+			}
+			alpha -= 1 / 45;
+			alpha = max(alpha, 0);
+			weightX += 0.12;
+			weightY += 0.12;
+		}
+
+		UpdateVertex;
+		frame++;
+		//if common data here for three lines below
+		ObjShader_SetFloat(objShader, "time", frame);
+		ObjShader_SetFloat(objShader, "weightX", weightX);
+		ObjShader_SetFloat(objShader, "weightY", weightY);
+		ObjShader_SetShaderO(obj,objShader);
+		yield;
+	}
+
+	Obj_Delete(obj);
+}

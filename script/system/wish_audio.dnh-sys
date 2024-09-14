@@ -1,0 +1,357 @@
+#include "script/system/wish_event.dnh-sys"
+
+//Audio functions
+const string PLACEHOLDER = "missingno";
+const string[] SE_LIST = [
+"test","test2","test3","se_lgods1","se_lgods2","luminous","se_big","se_bonus",
+"se_bonus2","se_bonus4","se_boon00","se_boon01","se_cancel00","se_cardget","se_cat00","se_ch00",
+"se_ch01","se_ch02","se_ch03","se_changeitem","se_damage00","se_damage01","se_don00","se_enep00",
+"se_enep01","se_enep02","se_etbreak","se_extend","se_extend2","se_fault","se_graze","se_gun00",
+"se_heal","se_invalid","se_item00","se_item01","se_kira00","se_kira01","se_kira02","se_lazer00",
+"se_lazer01","se_lazer02","se_lgods3","se_lgods4","se_lgodsget","se_msl","se_msl2","se_msl3",
+"se_nep00","se_nodamage","se_noise","se_notice","se_ok00","se_pause","se_pin00","se_pin01",
+"se_pldead00","se_pldead01","se_plst00","se_power0","se_power1","se_powerup","se_release","se_select00",
+"se_slash","se_tan00","se_tan01","se_tan02","se_tan03","se_timeout","se_timeout2","se_trophy",
+"se_warpl","se_warpr","se_wolf", "light_bolt_02", "chains_trapenemy", "whip_01", "swoosh", "alert",
+"heartbeat", "flatline"];
+const string[] BGM_LIST = ["title","stage1","boss1","stage2","boss2","stage3","boss3","ending","gameover"];
+const string[] SE_PATHS = [
+PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER,
+PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER,
+PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER,
+PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER,
+PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER,
+PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER,
+PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER,
+PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER,
+PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER,
+PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER,
+PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER,
+PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER, PLACEHOLDER
+];
+const string[] BGM_PATHS = [PLACEHOLDER,"script/other/bgm/athena.ogg","script/other/bgm/latias.ogg","script/other/bgm/ringabel.ogg","script/other/bgm/courtney.ogg",PLACEHOLDER,PLACEHOLDER,PLACEHOLDER,PLACEHOLDER];
+const float[] SE_VOLUMES = [
+100f,100f,100f,70f,70f,100f,100f,100f,
+100f,100f,100f,100f,100f,70f,70f,70f,
+100f,100f,100f,100f,100f,100f,100f,70f,
+100f,100f,100f,100f,100f,100f,100f,100f,
+100f,100f,100f,100f,70f,70f,70f,70f,
+70f,70f,70f,70f,100f,100f,100f,100f,
+100f,100f,100f,100f,100f,100f,100f,100f,
+100f,100f,100f,100f,100f,100f,100f,100f,
+100f,70f,70f,70f,70f,100f,100f,100f,
+100f,100f,100f,100f,70f,100f,70f,100f,
+100f,100f,70f,100f,100f,100f,100f,100f,
+100f,100f,100f,100f,100f,100f,100f,100f
+];
+const float[] BGM_VOLUMES = [100f,95f,100f,90f,100f,100f,100f,100f,100f];
+const int[] BGM_STARTSAMPLES = [100,27864,1864781,1739319,100,100,100,100,100]; //3985836 fucked up ringabel?
+const int[] BGM_LOOPSAMPLES = [10000000,10000000,6995010,4125202,10000000,10000000,10000000,10000000,10000000];
+const int[] BGM_BPM = [100,150,100,100,100,100,100,100,100];
+
+//Insert localization stuff here
+//Remember: in DNH, const only cares about how many times a variable is set!
+//It doesn't actually require a constant value to be its first set point!
+//...We can use this for a lot of localization related stuff, can't we...?
+
+const string[] BGM_NAMES = [
+"",
+"Courtroom Révolutionnaire - GaMetal",
+"Mystery Girl (Labyrinth) - Pokemon Heroes",
+"Love's Vagrant - Bravely Default",
+"Justine Courtney ~ Goddess of Law (Yaworski)",
+""
+];
+
+let SE_DICT = Obj_Create();
+let BGM_DICT = Obj_Create();
+let SOUND_SLOTS = [ID_INVALID, ID_INVALID, ID_INVALID, ID_INVALID, ID_INVALID, ID_INVALID, 
+ID_INVALID, ID_INVALID, ID_INVALID, ID_INVALID, ID_INVALID, ID_INVALID, ID_INVALID]; //only indices 1-10 are used
+let BGM_SLOT = ID_INVALID;
+const int BGM_SAMPLERATE = 48000;
+int BGM_POSITION = -99999;
+float BGM_TIME = -99999;
+int BGM_KEY = 0;
+float BGM_BEAT = -99999;
+int BGM_BEATSAMPLES = 0;
+
+//test = crack, test2 = ok, test3 = power
+//thanks terry
+
+let MasterVol = 100;
+let SFXVol = 100;
+let BGMVol = 100;
+int NextSlot = 1;
+
+@Loading {
+  InitDictionaries;
+}
+
+@Initialize {
+  SetAreaCommonData("Reserved","AudioScriptID", GetOwnScriptID());
+}
+
+@MainLoop {
+  if (!Obj_IsDeleted(BGM_SLOT) && BGM_SLOT != ID_INVALID) {
+    BGM_POSITION = ObjSound_GetInfo(BGM_SLOT, INFO_POSITION_SAMPLE);
+    BGM_TIME = ObjSound_GetInfo(BGM_SLOT, INFO_POSITION);
+    BGM_BEAT = (BGM_POSITION - BGM_STARTSAMPLES[BGM_KEY]) / BGM_BEATSAMPLES;
+  }
+  yield; 
+}
+
+@Event {
+  alternative(GetEventType)
+  case (EV_UPDATE_VOLUME_REGISTERS) {
+    MasterVol = GetAreaCommonData("Reserved", "MasterVol", -999999);
+    SFXVol = GetAreaCommonData("Reserved", "SFXVol", -999999);
+    BGMVol = GetAreaCommonData("Reserved", "BGMVol", -999999);
+  }
+  case (EV_UPDATE_VOLUME_DATA) {
+    SetAreaCommonData("Reserved", "MasterVol", MasterVol);
+    SetAreaCommonData("Reserved", "SFXVol", SFXVol);
+    SetAreaCommonData("Reserved", "BGMVol", BGMVol);
+  }
+  case (EV_MUSIC_INFO) {
+    SetAreaCommonData("Reserved", "BGMPosition", BGM_POSITION);
+    SetAreaCommonData("Reserved", "BGMTime", BGM_TIME);
+    SetAreaCommonData("Reserved", "BGMBeat", BGM_BEAT);
+  }
+  case (EV_PLAY_SFX) {
+    string val = GetEventArgument(0);
+    PlaySound(val,GetEventArgument(1),GetEventArgument(2));
+  }
+  case (EV_PLAY_BGM) { //in place of a PlayBGM fxn
+    string val = GetEventArgument(0);
+    BGM_KEY = indexof(BGM_LIST, val);
+
+    if (!Obj_IsDeleted(BGM_SLOT)) { ObjSound_Stop(BGM_SLOT); Obj_Delete(BGM_SLOT); BGM_SLOT = ID_INVALID; }
+
+    let obj = ObjSound_Create();
+    BGM_SLOT = obj;
+    ObjSound_Load(obj, PathBGM(BGM_KEY));
+    ObjSound_SetLoopSampleCount(obj, BGM_STARTSAMPLES[BGM_KEY], BGM_LOOPSAMPLES[BGM_KEY]);
+    ObjSound_SetLoopEnable(obj, true);
+    ObjSound_SetVolumeRate(obj, BGM_VOLUMES[BGM_KEY] * (BGMVol/100) * (MasterVol/100));
+    BGM_BEATSAMPLES = floor(BGM_SAMPLERATE * 60 / BGM_BPM[BGM_KEY]);
+    BGMText(BGM_NAMES[BGM_KEY]);
+    ObjSound_Play(obj);
+  }
+  case (EV_STOP_BGM) {
+    ObjSound_Stop(BGM_SLOT);
+    Obj_Delete(BGM_SLOT);
+    BGM_SLOT = ID_INVALID;
+    BGM_POSITION = -99999;
+    BGM_TIME = -99999;
+    BGM_BEAT = -99999;
+  }
+  case(EV_FADE_BGM) {
+    ObjSound_SetFade(BGM_SLOT, 50);
+  }
+  case(EV_BGM_TEST) {
+    // This was a test for Philia script, it's a debug event.  Remove as needed.
+    ObjSound_Seek(BGM_SLOT, 180);
+  }
+}
+
+@Finalize {
+  DestDictionaries;
+}
+
+function InitDictionaries { //should only be called from this Loading
+  InitSEDictionary;
+  //InitBGMDictionary;
+}
+
+function DestDictionaries { //should only be called from this Loading
+  DestSEDictionary;
+  //DestBGMDictionary;
+}
+
+function InitSEDictionary {
+  for(int i = 0; i < length(SE_LIST); i++) {
+    LoadSound(PathSFX(i));
+  }
+}
+
+function InitBGMDictionary {
+  for(int i = 0; i < length(BGM_LIST); i++) {
+    LoadSound(PathBGM(i));
+  }
+}
+
+function DestSEDictionary {
+  for(int i = 0; i < length(SE_LIST); i++) {
+    RemoveSound(PathSFX(i));
+  }
+}
+
+function DestBGMDictionary {
+  for(int i = 0; i < length(BGM_LIST); i++) {
+    RemoveSound(PathBGM(i));
+  }
+}
+
+function InitVolumes {
+  MasterVol = 100;
+  SFXVol = 100;
+  BGMVol = 100;
+  SetAreaCommonData("Reserved", "MasterVol", MasterVol);
+  SetAreaCommonData("Reserved", "SFXVol", SFXVol);
+  SetAreaCommonData("Reserved", "BGMVol", BGMVol);
+}
+
+function AdvanceSFXSlot() {
+  NextSlot = (NextSlot + 1) % 5;
+}
+
+function MD_Path(rest) {
+	return GetModuleDirectory ~ "/script/" ~ rest;
+}
+
+function<string> PathSFX(int i) {
+  if (SE_PATHS[i] == PLACEHOLDER) {
+    return BaseSFXPath(SE_LIST[i]);
+  }
+  return SE_PATHS[i];
+}
+
+function<string> PathBGM(int i) {
+  if (BGM_PATHS[i] == PLACEHOLDER) {
+    return BaseBGMPath(BGM_LIST[i]);
+  }
+  return BGM_PATHS[i];
+}
+
+
+/*Unnecessary overloads?
+function<string> PathSFX(string rest) {
+  if (SFX_PATHS[i] == PLACEHOLDER) {
+    return BaseSFXPath(SFX_LIST[i]);
+  }
+  return SFX_PATHS[indexof(SFX_PATHS, rest)];
+}
+
+function<string> PathBGM(string rest) {
+  if (rest == PLACEHOLDER) {
+    return BaseBGMPath(rest);
+  }
+  return BGM_PATHS[indexof(BGM_PATHS, rest)];
+}*/
+
+/* Lol Naudiz has indexof, remove later
+function<int> FindInArray(arr, val) {
+  let ret_key = -1;
+  for(int i = 0; i < length(arr); i++) {
+    if (arr[i] == val) { ret_key = i; break; }
+  }
+  return ret_key;
+}
+*/
+
+function BaseSFXPath(rest) {
+  return MD_Path("") ~ "sound/sfx/" ~ rest ~ ".wav";
+}
+
+function BaseBGMPath(rest) {
+  return MD_Path("") ~ "sound/bgm/" ~ rest ~ ".ogg";
+}
+
+task PlaySound(string val, let x, let compX) {
+  /*
+  How This Works!
+  In order,
+  1) there are 10 sound effect slots (with one leftover for memory safety) and the system checks if there is an open one available.
+     if there is, move on, otherwise return.
+  2) find the actual sound effect you're looking for based on `val` in SE_LIST.
+  3) create and load the actual sound effect object, and put it into curSlot as defined by step 1.
+  4) set pan rate for the doppler effect that tricky had in his system (it's neat I like it)
+  5) wait until it's done playing, then free the sound slot
+
+  This works similarly for PlayBGM, but it's done under the event tag and I don't fuckin know why I guess it cuts down on active tasks maintaining sounds and shit xd
+  There's also only one sound slot for BGM there, though that may not apply if we're doing a weird trance mode like thing ever.  or like DLW I guess
+  */
+  const int curSlot = verifySlot;
+
+  function verifySlot {
+    ascent(i in 0..10) {
+      int slot = NextSlot;
+      NextSlot = (NextSlot + 1) % 10;
+      if (SOUND_SLOTS[slot] == ID_INVALID) {
+        return slot;
+      }
+    }
+
+    return DEFAULT_INT;
+  }
+
+  if (curSlot == DEFAULT_INT) {
+    //WriteLog("defaulted");
+    //WriteLog(ToString(SOUND_SLOTS));
+    return;
+  }
+
+  let obj = ObjSound_Create();
+  const int key = indexof(SE_LIST, val);
+  SOUND_SLOTS[curSlot] = obj;
+  ObjSound_Load(obj, PathSFX(key));
+  ObjSound_SetVolumeRate(obj, SE_VOLUMES[key] * (SFXVol/100) * (MasterVol/100));
+  ObjSound_SetPanRate(obj, DopplerEffect(x));
+  ObjSound_Play(obj);
+  
+  function DopplerEffect(x) {
+    if (GetAreaCommonData("Settings","VolumePan",false)) {
+      return (compX-x)/8;
+    }
+    return 0;
+  }
+
+  while(ObjSound_IsPlaying(obj)) {
+    yield;
+  }
+
+  Obj_Delete(obj);
+  SOUND_SLOTS[curSlot] = ID_INVALID;
+  return;
+}
+
+task BGMText(string text) {
+  // thanks to SG's code being Absurdly Kooky for now I'll have to make this a bit differently until I can fix it up...
+
+  string thing = "♫ " ~ text;
+
+  int obj = ObjText_Create();
+  ObjText_SetText(obj, thing);
+  ObjText_SetFontType(obj, "Arial");
+  ObjText_SetFontSize(obj, 20);
+  ObjText_SetFontBold(obj, true);
+  ObjText_SetFontColorTop(obj, 128, 128, 255);
+  ObjText_SetFontColorBottom(obj, 64, 64, 255);
+  ObjText_SetFontBorderType(obj, BORDER_FULL);
+  ObjText_SetFontBorderColor(obj,255, 255, 255);
+  ObjText_SetFontBorderWidth(obj, 2);
+  ObjText_SetHorizontalAlignment(obj, ALIGNMENT_RIGHT);
+  ObjText_SetMaxWidth(obj, 768);
+  Obj_SetRenderPriorityI(obj, 79);
+
+  ObjRender_SetX(obj, 0);
+  ObjRender_SetY(obj, -64);
+
+  float y = -64;
+  float alpha = 255;
+
+  loop(30) {
+    y += 64/30;
+    ObjRender_SetY(obj, y);
+    yield;
+  }
+  wait(150);
+  loop(30) {
+    alpha -= 255/30;
+    ObjRender_SetAlpha(obj, alpha);
+    yield;
+  }
+  Obj_Delete(obj);
+}
+
+

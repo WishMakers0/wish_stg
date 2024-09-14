@@ -1,0 +1,217 @@
+//----------------------------------------------------
+//FPS表示
+//----------------------------------------------------
+task TCurrentFps()
+{
+	let objText = ObjText_Create();
+	ObjText_SetFontSize(objText, 20);
+	ObjText_SetFontBold(objText, true);
+	ObjText_SetFontColorTop(objText, 160, 160, 160); //255->160 got rid of blue
+	ObjText_SetFontColorBottom(objText, 64, 64, 64); //255->64
+	ObjText_SetFontBorderType(objText, BORDER_FULL);
+	ObjText_SetFontBorderColor(objText,255, 255, 255);
+	ObjText_SetFontBorderWidth(objText, 2);
+	ObjText_SetHorizontalAlignment(objText, ALIGNMENT_RIGHT);
+	ObjText_SetMaxWidth(objText, GetScreenWidth() - 8);
+	Obj_SetRenderPriority(objText, 1.0);
+	ObjRender_SetX(objText, 0);
+	ObjRender_SetY(objText, GetScreenHeight() - 24); //20
+
+	//added
+	ObjText_SetFontType(objText, "NT Marley");
+
+	loop
+	{
+		let fps = GetCurrentFps();
+		let text = vtos("1.2f", fps) ~ "fps";
+		ObjText_SetText(objText, text);
+		yield;
+	}
+}
+
+task TReplayFps()
+{
+	if(!IsReplay()){return;}
+
+	let objText = ObjText_Create();
+	ObjText_SetFontSize(objText, 20);
+	ObjText_SetFontBold(objText, true);
+	ObjText_SetFontColorTop(objText, 128, 128, 255);
+	ObjText_SetFontColorBottom(objText, 64, 64, 255);
+	ObjText_SetFontBorderType(objText, BORDER_FULL);
+	ObjText_SetFontBorderColor(objText,255, 255, 255);
+	ObjText_SetFontBorderWidth(objText, 1);
+	Obj_SetRenderPriority(objText, 1.0);
+
+	//added
+	ObjText_SetFontType(objText, "NT Marley");
+
+	let px = GetStgFrameLeft() + GetStgFrameWidth() - 18;
+	let py = GetStgFrameTop() + GetScreenHeight() - 18; //14
+	ObjRender_SetX(objText, px);
+	ObjRender_SetY(objText, py);
+
+	loop
+	{
+		let fps = GetReplayFps();
+		let text = vtos("02d", fps);
+		ObjText_SetText(objText, text);
+		yield;
+	}
+}
+
+//----------------------------------------------------
+//ボスのライフ表示
+//----------------------------------------------------
+task TBossLife
+{
+	let path = GetCurrentScriptDirectory() ~ "img/Default_System.png";
+	let obj = ObjPrim_Create(OBJ_SPRITE_LIST_2D);
+	ObjPrim_SetTexture(obj, path);
+	Obj_SetRenderPriority(obj, 0.7);
+
+	let lastRemStep = -1;
+	float lifeRateRender = 0;
+
+	let objScene = ID_INVALID;
+	loop
+	{
+		objScene = GetEnemyBossSceneObjectID();
+		ObjSpriteList2D_ClearVertexCount(obj);
+		if(objScene != ID_INVALID)
+		{
+			RenderLife();
+		}
+		yield;
+	}
+
+
+	function RenderLife()
+	{
+		//残りステップ
+		let countRemStep = ObjEnemyBossScene_GetInfo(objScene, INFO_REMAIN_STEP_COUNT);
+		if(lastRemStep != countRemStep)
+		{
+			//ステップが変化
+			lifeRateRender = 0;
+		}
+
+		//ライフ表示
+		let lifeTotalMax = ObjEnemyBossScene_GetInfo(objScene, INFO_ACTIVE_STEP_TOTAL_MAX_LIFE);
+		let lifeTotal = ObjEnemyBossScene_GetInfo(objScene, INFO_ACTIVE_STEP_TOTAL_LIFE);
+		let lifeRate = min(lifeTotal / lifeTotalMax, lifeRateRender);
+		ObjSpriteList2D_SetSourceRect(obj, 1, 1, 127, 11);
+		ObjSpriteList2D_SetDestRect(obj, 72, 8, 72 + 270 * lifeRate, 12);
+		ObjSpriteList2D_AddVertex(obj);
+
+		//ライフの区切り表示
+		ObjSpriteList2D_SetSourceRect(obj, 132, 1, 137, 11);
+		let listLifeDiv = [0] ~ ObjEnemyBossScene_GetInfo(objScene, INFO_ACTIVE_STEP_LIFE_RATE_LIST);
+		ascent(iDiv in 0 .. length(listLifeDiv))
+		{
+			let rate = listLifeDiv[iDiv];
+			let x = 72 + 270 * (1-rate);
+			ObjSpriteList2D_SetDestRect(obj, x-1, 4, x + 1, 14);
+			ObjSpriteList2D_AddVertex(obj);
+		}
+
+		//残りステップ表示
+		ObjSpriteList2D_SetSourceRect(obj, 1, 1, 127, 11);
+		ascent(iStep in 0 .. countRemStep)
+		{
+			let remStepRate = 58 / countRemStep;
+			ObjSpriteList2D_SetDestRect(obj, 4 + iStep * remStepRate + 2, 8,
+				4 + (iStep + 1) * remStepRate, 12);
+			ObjSpriteList2D_AddVertex(obj);
+		}
+
+		lifeRateRender += 0.01;
+		lifeRateRender = min(lifeRateRender, 1);
+		lastRemStep = countRemStep;
+	}
+}
+
+//----------------------------------------------------
+//タイマー表示
+//----------------------------------------------------
+task TBossTimer
+{
+	let pathDigit = GetCurrentScriptDirectory() ~ "img/Default_SystemDigit.png";
+
+	let obj = ObjPrim_Create(OBJ_SPRITE_LIST_2D);
+	ObjPrim_SetTexture(obj, pathDigit);
+	ObjRender_SetBlendType(obj, BLEND_ADD_RGB);
+	Obj_SetRenderPriority(obj, 0.75);
+	ObjRender_SetY(obj, 0);
+	let count = 2;
+
+	let objScene = ID_INVALID;
+	loop
+	{
+		objScene = GetEnemyBossSceneObjectID();
+		ObjSpriteList2D_ClearVertexCount(obj);
+		if(objScene != ID_INVALID)
+		{
+			RenderTimer();
+		}
+		yield;
+	}
+
+	function RenderTimer()
+	{
+		let timer = ObjEnemyBossScene_GetInfo(objScene, INFO_TIMER);
+		timer = min(timer, 99);
+		let listNum = DigitToArray(timer, count);
+
+		ObjSpriteList2D_ClearVertexCount(obj);
+		ascent(iObj in 0 .. count)
+		{
+			let num = listNum[iObj];
+			ObjRender_SetX(obj, 352 + iObj * 14);
+			ObjSpriteList2D_SetSourceRect(obj, num * 25, 0, (num + 1) * 25, 30);
+			ObjSpriteList2D_SetDestRect(obj, 0, 0, 16, 24);
+			ObjSpriteList2D_AddVertex(obj);
+		}
+	}
+
+}
+
+//----------------------------------------------------
+//スペルカード取得表示
+//----------------------------------------------------
+task TGainSpell(score)
+{
+	let objText = ObjText_Create();
+	ObjText_SetText(objText, "Spell Card Bonus!");
+	ObjText_SetFontSize(objText, 32);
+	ObjText_SetFontBold(objText, true);
+	ObjText_SetFontColorTop(objText, 255, 255, 255);
+	ObjText_SetFontColorBottom(objText, 128, 128, 255);
+	ObjText_SetFontBorderType(objText, BORDER_FULL);
+	ObjText_SetFontBorderColor(objText,255, 255, 255);
+	ObjText_SetFontBorderWidth(objText, 1);
+	Obj_SetRenderPriority(objText, 0.6);
+	ObjRender_SetX(objText, 32);
+	ObjRender_SetY(objText, 98);
+
+	let strScore = "+" ~ IntToString(score);
+	let objScore = ObjText_Create();
+	ObjText_SetText(objScore, strScore);
+	ObjText_SetFontSize(objScore, 32);
+	ObjText_SetFontBold(objScore, true);
+	ObjText_SetFontColorTop(objScore, 255, 255, 255);
+	ObjText_SetFontColorBottom(objScore, 255, 128, 128);
+	ObjText_SetFontBorderType(objScore, BORDER_FULL);
+	ObjText_SetFontBorderColor(objScore,255, 255, 255);
+	ObjText_SetFontBorderWidth(objScore, 1);
+	Obj_SetRenderPriority(objScore, 0.6);
+	ObjRender_SetX(objScore, 180);
+	ObjRender_SetY(objScore, 140);
+
+	loop(120)
+	{
+		yield;
+	}
+	Obj_Delete(objText);
+	Obj_Delete(objScore);
+}

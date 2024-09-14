@@ -1,0 +1,45 @@
+/*
+*******************************
+SYSTEM EVENTS - offsets 1-100
+*******************************
+*/
+
+const int EV_SYS_RESERVED = EV_USER + 1;
+const int EV_UPDATE_VOLUME_REGISTERS = EV_USER + 10;
+const int EV_UPDATE_VOLUME_DATA = EV_USER + 11;
+const int EV_PLAY_SFX = EV_USER + 12;
+const int EV_PLAY_BGM = EV_USER + 13;
+const int EV_MUSIC_INFO = EV_USER + 14;
+const int EV_STOP_BGM = EV_USER + 15;
+const int EV_FADE_BGM = EV_USER + 16;
+const int EV_BGM_TEST = EV_USER + 20; // why did I make it THIS???
+
+/*
+*******************************
+PLAYER/STG EVENTS - offsets 101-200
+*******************************
+*/
+
+const int EV_SHOT_HANDLER = EV_USER + 101;
+const int EV_BOMB_HANDLER = EV_USER + 102;
+const int EV_NOT_FIRING = EV_USER + 103;
+
+const int EV_CREATE_ITEM = EV_USER + 150;
+const int EV_MULTIPLIER_HIT = EV_USER + 151;
+
+/*
+*******************************
+PACKAGE/MENU EVENTS - offsets 201-300
+*******************************
+*/
+const int EV_UNLOAD = EV_USER + 201;
+const int EV_MENU_CREATE = EV_USER + 202;
+const int EV_MENU_START = EV_USER + 203;
+const int EV_MENU_DESTROY = EV_USER + 204;
+const int EV_MENU_FORCECLOSE = EV_USER + 205;
+
+/*
+*******************************
+ASSOCIATED FUNCTIONS
+*******************************
+*/

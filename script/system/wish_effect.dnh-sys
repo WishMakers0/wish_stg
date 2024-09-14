@@ -1,0 +1,309 @@
+
+const int PART_MKMEXPLOSION = 0;
+const int PART_BULLETDELETE = 1;
+const int PART_ALERT = 2;
+
+const int TEMPLATE_XOFFSET = 0;
+const int TEMPLATE_YOFFSET = 1;
+const int TEMPLATE_SPEED = 2;
+const int TEMPLATE_ANGLE = 3;
+const int TEMPLATE_ACCEL = 4;
+const int TEMPLATE_GRAVITY = 5;
+const int TEMPLATE_GRAV_ACCEL = 6;
+const int TEMPLATE_SPEED_RANGE = 7;
+const int TEMPLATE_ANGLE_RANGE = 8;
+const int TEMPLATE_IMG_ANGLE = 9;
+const int TEMPLATE_IMG_ANGLE_RANGE = 10;
+const int TEMPLATE_SCALE = 11;
+const int TEMPLATE_SCALE_RANGE = 12;
+const int TEMPLATE_SCALE_INCR = 13;
+const int TEMPLATE_ALPHA_INIT = 14;
+const int TEMPLATE_ALPHA_END = 15;
+const int TEMPLATE_LIFE_INIT = 16;
+const int TEMPLATE_GRAV_ANGLE = 17;
+const int TEMPLATE_ANGLE_ACCEL = 18;
+const int templateSize = 19;
+
+const int INSTANCE_TYPE = 0;
+const int INSTANCE_DELFLAG = 1;
+const int INSTANCE_X = 2;
+const int INSTANCE_Y = 3;
+const int INSTANCE_SCALE = 4;
+const int INSTANCE_SINMOVE = 5;
+const int INSTANCE_COSMOVE = 6;
+const int INSTANCE_SINGRAV = 7;
+const int INSTANCE_COSGRAV = 8;
+const int INSTANCE_ALPHA = 9;
+const int INSTANCE_IMG_ANGLE = 10;
+const int INSTANCE_LIFE = 11;
+const int INSTANCE_INIT_ANGLE = 12;
+const int INSTANCE_GRAV_AMOUNT = 13;
+const int INSTANCE_INIT_SPEED = 14;
+
+const int partStorage = Obj_Create();
+const int partTemplates = Obj_Create();
+const int[] partFxns = [ID_INVALID, ID_INVALID, __funcptr(_AlertFxn, 1)];
+float[][] partInstances = [];
+bool clearFlag = false;
+
+//type (const, cast to int), delete_flag (cast to bool), x, y, scale, sinmove, cosmove, singrav, cosgrav, alpha, image_angle, life, angle_init, grav_ampunt, speed_init
+const float[] part_default_instance = [-1, float(false), 0, 0, 0, 0, 0, 0, 0, 255, 0, 0, 0, 0, 0];
+
+@Initialize {
+  SetAreaCommonData("Reserved","EffectScriptID", GetOwnScriptID());
+
+  ParticleManagerSetup;
+}
+
+@Event {
+	int evType = GetEventType - EV_USER;
+	if (evType >= 0) {
+		CreateParticleInstance(evType, GetEventArgument(0), GetEventArgument(1));
+	}
+}
+
+@MainLoop {
+	//Particle management per frame
+	int numInst = length(partInstances);
+	for(int i = 0; i < numInst; i++) {
+		partInstances[i] = Particle_Step(partInstances[i]);
+		if (length(partInstances[i]) == 0) { //detects for if the particle was cleared, then deletes the object value
+			partInstances = remove(partInstances, []);
+			i--;
+			numInst--;
+		}
+	}
+
+	//Failsafe + script natural end
+	if (clearFlag) {
+		CleanUp();
+	}
+
+	yield;
+}
+
+
+function<void> CleanUp() {
+	Obj_Delete(partStorage);
+	Obj_Delete(partTemplates);
+
+	CloseScript(GetOwnScriptID());
+}
+
+/*
+
+// Old!!!
+
+function<int> FindNextParticleInstance(int cur) { //DNH's object values are not in a vector, but in a hash table.  Need to find next
+	int ret = cur;
+	while(!Obj_IsValueExistsI(partInstances, ret) || (ret-cur) > 5000) { ret++; }
+	if (ret-cur > 5000) { return ID_INVALID; }
+	return ret;
+}
+
+function<int> FindNextAvailableID() {
+	int ret = 0;
+	while(Obj_IsValueExistsI(partInstances, ret)) { ret++; }
+	return ret;
+}
+*/
+function<void> CreateParticleInstance(int index, float x, float y) {
+	float[] inst = part_default_instance;
+	float[] template = Obj_GetValueI(partTemplates, index, []);
+	if (length(template) < templateSize) {
+		RaiseError("Particle template for given type invalid.");
+		return;
+	}
+	inst[INSTANCE_TYPE] = index;
+	inst[INSTANCE_X] = x;
+	inst[INSTANCE_Y] = y;
+	inst[INSTANCE_LIFE] = template[TEMPLATE_LIFE_INIT];
+	inst[INSTANCE_INIT_ANGLE] = template[TEMPLATE_ANGLE] + pRNG()* template[TEMPLATE_ANGLE_RANGE];
+	inst[INSTANCE_INIT_SPEED] = template[TEMPLATE_SPEED] + pRNG()* template[TEMPLATE_SPEED_RANGE];
+
+	inst = Particle_ChangeSincos(inst, template, 0);
+	partInstances ~= [inst];
+	//Obj_SetValueI(partInstances, FindNextAvailableID(), inst); //Obj_GetValueCountI(partInstances) ?????
+}
+
+function<float> pRNG() {
+	//come up with some kind of complicated RNG-like algorithm...
+	return rand(-1,1);
+}
+
+function<float[]> Particle_ChangeSincos(float[] orig, float[] template, int time) {
+	float[] ret = orig;
+	float angle_init = orig[INSTANCE_INIT_ANGLE];
+	float speed_init = orig[INSTANCE_INIT_SPEED];
+	float grav_angle = template[TEMPLATE_GRAV_ANGLE];
+
+	if (time == 0) {
+		ret[INSTANCE_SINMOVE] = sin(angle_init) * speed_init;
+		ret[INSTANCE_COSMOVE] = cos(angle_init) * speed_init;
+		ret[INSTANCE_SINGRAV] = sin(grav_angle);
+		ret[INSTANCE_COSGRAV] = cos(grav_angle);
+		return ret;
+	}
+
+	float sp_now = template[TEMPLATE_ACCEL] * time + speed_init;
+	float ang_now = template[TEMPLATE_ANGLE_ACCEL] * time + angle_init;
+	ret[INSTANCE_SINMOVE] = sin(ang_now) * sp_now;
+	ret[INSTANCE_COSMOVE] = cos(ang_now) * sp_now;
+	return ret;
+}
+
+function<float[]> Particle_Step(float[] orig) {
+	if (orig[INSTANCE_DELFLAG]) { //due for deletion? 
+		return []; // returning an empty array allows for easy cleanup in MainLoop
+	}
+
+	float[] ret = orig;
+	ret[INSTANCE_LIFE] -= 1;
+
+	int type = int(orig[INSTANCE_TYPE]);
+	float[] template = Obj_GetValueI(partTemplates, type, []);
+	int time = template[TEMPLATE_LIFE_INIT] - int(ret[INSTANCE_LIFE]);
+	if (template[TEMPLATE_ACCEL] > 0) {
+		Particle_ChangeSincos(ret, template, time);
+	}
+	ret[INSTANCE_X] += ret[INSTANCE_SINMOVE];
+	ret[INSTANCE_Y] += ret[INSTANCE_COSMOVE];
+	ret[INSTANCE_SCALE] += template[TEMPLATE_SCALE_INCR];
+	ret[INSTANCE_ALPHA] += (template[TEMPLATE_ALPHA_END] - template[TEMPLATE_ALPHA_INIT]) / template[TEMPLATE_LIFE_INIT];
+	//WriteLog( ToString( [ ret[INSTANCE_SCALE], ret[INSTANCE_ALPHA], ret[INSTANCE_LIFE] ] ) );
+	if (partFxns[type] != ID_INVALID) {
+		ret = invoke(partFxns[type], ret);
+	}
+
+	int partList = Obj_GetValueI(partStorage, type, ID_INVALID);
+	ObjParticleList_SetPosition(partList, ret[INSTANCE_X], ret[INSTANCE_Y], 0);
+	ObjParticleList_SetScale(partList, ret[INSTANCE_SCALE]);
+	ObjParticleList_SetAngleZ(partList, ret[INSTANCE_IMG_ANGLE]);
+	//ObjParticleList_SetColor(partList, );
+	ObjParticleList_SetAlpha(partList, ret[INSTANCE_ALPHA]);
+	ObjParticleList_AddInstance(partList);
+
+	//At the end of Particle_Step, check for if it is due for deletion...
+	if (ret[INSTANCE_LIFE] < 1) {
+		ret[INSTANCE_DELFLAG] = true;
+	}
+
+	//WriteLog(ToString(ret));
+	return ret;
+}
+
+//hey it's time to make a particle manager woo
+function ParticleManagerSetup() {
+ 	/*
+ 	game plan: store a bunch of arrays that have particles in them
+ 	the problem is i don't want a bunch of running tasks... so i'll only have one task managing the whole thing
+ 	i'll need it to manage the array of arrays and fig ure out which ones are deleted each frame
+ 	i'll use GM's "life" system like a timer.  keep a timer for how long the effect needs to stay alive
+ 	the nice thing is that this is all batched by particle type, so i really only need to "create it" once.  i just need to adjust it dynamically
+ 	the issues arise if they ever need...animation.  i'll need the `black magic` shader for that one
+	*/
+ 	
+	const string animShPath = "script/lib/TexParticle.hlsl";
+
+ 	//conversion of mkm explosion to particle
+ 	const int part_mkmExplosion_ = ObjParticleList_Create(OBJ_PARTICLE_LIST_2D);
+ 	ObjPrim_SetTexture(part_mkmExplosion_, "script/default_system/img/Default_Effect.png");
+ 	ObjRender_SetBlendType(part_mkmExplosion_, BLEND_ADD_ARGB);
+ 	PrimRect(part_mkmExplosion_, 1, 1, 63, 63, 62, 62, true);
+ 	//key to default particle array format:
+ 	//xoffset, yoffset, speed, angle, accel, gravity, grav_accel, speed_range, angle_range, image_angle, image_angle_range, scale, scale_range, scale_incr, alpha1, alpha2, life_init, grav_angle, ang_accel
+ 	const float[] part_mkmExplosion_default = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.1, 0.2, 1.0, 255, 0, 30, 0, 0]; // [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.1, 255, 0, 30, 0, 0];
+ 	Obj_SetValueI(partStorage, PART_MKMEXPLOSION, part_mkmExplosion_);
+ 	Obj_SetValueI(partTemplates, PART_MKMEXPLOSION, part_mkmExplosion_default);
+
+ 	const int part_bulletDelete_ = ObjParticleList_Create(OBJ_PARTICLE_LIST_2D);
+ 	ObjPrim_SetTexture(part_bulletDelete_, "script/img/sht/Default_Effect.png");
+ 	ObjRender_SetBlendType(part_bulletDelete_, BLEND_ADD_ARGB);
+ 	PrimRect(part_bulletDelete_, 1, 1, 63, 63, 62, 62, true);
+ 	ObjShader_SetShaderF(part_bulletDelete_, animShPath);
+ 	//ObjParticleList_SetExtraData(part_bulletDelete_, ); note to self for later: investigate extra data here...
+ 	const float[] part_bulletDelete_default = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1.0, 0, 0, 255, 255, 30, 0, 0]; // [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.1, 255, 0, 30, 0, 0];
+ 	Obj_SetValueI(partStorage, PART_BULLETDELETE, part_bulletDelete_);
+ 	Obj_SetValueI(partTemplates, PART_BULLETDELETE, part_bulletDelete_default);
+
+ 	const int part_Alert_ = ObjParticleList_Create(OBJ_PARTICLE_LIST_2D);
+ 	ObjPrim_SetTexture(part_Alert_, "script/img/stg/Alert.png");
+ 	ObjRender_SetBlendType(part_Alert_, BLEND_ALPHA);
+ 	PrimRect(part_Alert_, 0, 0, 256, 256, 256, 256, true);
+ 	//key to default particle array format:
+ 	//xoffset, yoffset, speed, angle, accel, gravity, grav_accel, speed_range, angle_range, image_angle, image_angle_range, scale, scale_range, scale_incr, alpha1, alpha2, life_init, grav_angle, ang_accel
+ 	const float[] part_alert_default = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.5, 0, 0, 255, 255, 90, 0, 0]; // [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.1, 255, 0, 30, 0, 0];
+ 	Obj_SetValueI(partStorage, PART_ALERT, part_Alert_);
+ 	Obj_SetValueI(partTemplates, PART_ALERT, part_alert_default);
+ }
+ //*/
+
+ function PrimRect(int list, int x1, int y1, int x2, int y2, int w, int h, bool centered) {
+	int ox = 0; //origin
+	int oy = 0;
+	if (centered) {
+		ox = -1 * w / 2;
+		oy = -1 * h / 2;
+	}
+
+	ObjPrim_SetPrimitiveType(list, PRIMITIVE_TRIANGLELIST);
+	ObjPrim_SetVertexCount(list, 4);
+	ObjPrim_SetVertexPosition(list, 0, ox + x1, oy + y1, 0);
+	ObjPrim_SetVertexUVT(list, 0, 0, 0);
+	ObjPrim_SetVertexPosition(list, 1, ox + x2, oy + y1, 0);
+	ObjPrim_SetVertexUVT(list, 1, w, 0);
+	ObjPrim_SetVertexPosition(list, 2, ox + x1, oy + y2, 0);
+	ObjPrim_SetVertexUVT(list, 2, 0, h);
+	ObjPrim_SetVertexPosition(list, 3, ox + x2, oy + y2, 0);
+	ObjPrim_SetVertexUVT(list, 3, w, h);
+	ObjPrim_SetVertexIndex(list, [0, 1, 2, 1, 2, 3]);
+}
+
+
+ //mkm explosion
+ /*
+task TExplosionA(x, y, dAlpha, dScale)
+{
+	let path = GetCurrentScriptDirectory() ~ "img/Default_Effect.png";
+	let obj = ObjPrim_Create(OBJ_SPRITE_2D);
+	ObjPrim_SetTexture(obj, path);
+	Obj_SetRenderPriority(obj, 0.65);
+	ObjRender_SetBlendType(obj, BLEND_ADD_RGB);
+	ObjSprite2D_SetSourceRect(obj, 1, 1, 63, 63);
+	ObjSprite2D_SetDestCenter(obj);
+	ObjRender_SetPosition(obj, x, y, 0);
+
+	let scale = 0;
+	let alpha = 255;
+	while(alpha > 0)
+	{
+		ObjRender_SetColor(obj, alpha, alpha, alpha);
+		ObjRender_SetScaleXYZ(obj, scale, scale, 1);
+
+		scale += dScale;
+		alpha -= dAlpha;
+		yield;
+	}
+	Obj_Delete(obj);
+} //*/
+
+function<float[]> _AlertFxn(float[] orig) {
+	float[] ret = orig;
+	int life = ret[INSTANCE_LIFE];
+	const int life_max = 90;
+	int timer = (life - life_max) * -1;
+
+	if (life >= (life_max - 10)) {
+		ret[INSTANCE_ALPHA] = timer * 14;
+		ret[INSTANCE_SCALE] = timer * 0.05;
+	} 
+	else if (life >= 20) {
+		ret[INSTANCE_SCALE] = 0.5;
+		ret[INSTANCE_ALPHA] = 140 + 60*sin(timer*40);
+	}
+	else {
+		ret[INSTANCE_ALPHA] -= 200/20;
+	}
+
+	return ret;
+}

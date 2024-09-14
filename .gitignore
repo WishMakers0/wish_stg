@@ -396,3 +396,9 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# RoEW executables
+th_roew.exe
+*.map
+*.pdb
+config.exe

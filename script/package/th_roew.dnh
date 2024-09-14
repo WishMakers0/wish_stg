@@ -1,0 +1,8 @@
+﻿#TouhouDanmakufu[Package]
+#Title["wish_stg"]
+#Text["sorry it had to be called roew as a reminder of my hubris and because i didn't feel like recompiling dnh"]
+#Player[FREE]
+
+#include "script/package/package.dnh"
+
+
