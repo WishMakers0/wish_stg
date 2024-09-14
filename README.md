@@ -14,6 +14,7 @@ I don't expect any pull requests, but if you see I did a big stupid you can send
 
 ## Contents
 
+```
 wish_stg
 ├── script
 │	├── DATS_GO_HERE (directory, should be self-explanatory)
@@ -26,6 +27,7 @@ wish_stg
 ├── th_roew.exe (sorry gnu/linux fans you'll need proton probably)
 ├── config.exe (potentially unnecessary in future versions due to some new dnh developments)
 └── README.md (this file)
+```
 
 ## Greets/Credits
 
