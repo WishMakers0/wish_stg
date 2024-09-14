@@ -32,8 +32,11 @@ wish_stg
 ## Greets/Credits
 
 Python, Drek - for creating T.B.A and MoSS which inspired this project in the first place
+
 Natashi, Naudiz, neck - for tolerating my incessant questions in the ph3sx server
+
 Mana - for teaching me many new tricks in DNH engine building that inspire me to push the boundaries
+
 Trickysticks - moral support and woo legacy
 
 ## Building/Download Info
